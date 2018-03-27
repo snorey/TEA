@@ -21,22 +21,15 @@ import urllib
 import urllib2
 import xml.parsers.expat
 
-lakezips = ["46303", "46307", "46308", "46311", "46312", "46319", "46320",
-            "46321", "46322", "46323", "46324", "46325", "46327", "46342", "46355",
-            "46356", "46373", "46375", "46376", "46377", "46394", "46401", "46402",
-            "46403", "46404", "46405", "46406", "46407", "46408", "46409", "46410",
-            "46411"]
+import idem_settings
 
-downloadzips = ["46303", "46307", "46308", "46311", "46312", "46319", "46320",
-                "46321", "46322", "46323", "46324", "46325", "46327", "46342", "46355",
-                "46356", "46373", "46375", "46376", "46377", "46394", "46401", "46402",
-                "46403", "46404", "46405", "46406", "46407", "46408", "46409", "46410",
-                "46411"]
+lakezips = idem_settings.do_lake_zips
+downloadzips = idem_settings.downloadzips
+maindir = idem_settings.maindir
+permitdir = idem_settings.permitdir
+enforcementdir = idem_settings.enforcementdir
+innddir = idem_settings.innddir
 
-maindir = "/home/sam/TEA/TEA"
-permitdir = os.path.join(maindir, "Permits")
-enforcementdir = os.path.join(maindir, "Enforcement")
-innddir = os.path.join(maindir, "INND")
 
 class TotalUpdater:
     def __init__(self):
@@ -141,9 +134,9 @@ class ZipCollection(list):
                 continue
             latstring, longstring = latlongstring.split(", ")
             lat = float(latstring[1:])
-            long = float(longstring[:-1])
+            lon = float(longstring[:-1])
             facility = self.iddic[id]
-            facility.latlong = (lat, long)
+            facility.latlong = (lat, lon)
             facility.address = add
 
 
@@ -727,7 +720,7 @@ def generate_type_url(id, type):
 
 
 def coord_from_address(address):
-    apikey = "AIzaSyBx0D5K2ae5_HxKYU_VdyghlCOFsIHya08"
+    apikey = idem_settings.google_maps_key
     url = "https://maps.googleapis.com/maps/api/geocode/json?address=%s&key=%s"
     url = url % (urllib.quote(address), apikey)
     apipage = urllib2.urlopen(url).read()
