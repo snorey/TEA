@@ -1,7 +1,10 @@
 import datetime
+import idem_settings
 import re
 import requests
+import tea_core
 import time
+
 
 class Fetcher:
 
@@ -50,7 +53,9 @@ class Fetcher:
     def fetch_until_date(self,until):
         pass
 
-    def save(self,path="public_notices_%s.html" % datetime.date.today()):
+    def save(self, path=""):
+        if not path:
+            path = self.get_page_path()
         open(path,"w").write(self.pages)
         return path
 
@@ -65,10 +70,16 @@ class Fetcher:
         for p in pieces:
             self.notices.append(Notice(input=p))
 
+    def get_page_path(self, today=datetime.date.today()):
+        filename = "public_notices_%s.html" % datetime.date.today()
+        path = os.path.join(idem_settings.noticedir, filename)
+        return path
 
-class Notice:
+
+class Notice(tea_core.Document):
 
     def __init__(self,from_input=False):
+        super(EnforcementDoc, self).__init__(**arguments)
         self.raw = ""
         self.url = ""
         self.body = ""
@@ -79,16 +90,16 @@ class Notice:
             self.raw = from_input
             self.process_input(from_input)
 
-    def process_input(self,input):
+    def process_input(self, content):
         domain = "http://in.mypublicnotices.com"
-        link = input.split('<a href="',1)[1].split('"')[0]
+        link = content.split('<a href="', 1)[1].split('"')[0]
         self.url = domain + link
-        body_chunk = input.split('<img')[1].split("<br>")[1].split("</td>")[0]
+        body_chunk = content.split('<img')[1].split("<br>")[1].split("</td>")[0]
         if "<B>" in body_chunk:
             self.title = body_chunk.split("<B>")[1].split("</B>")[0]
             self.body = body_chunk.strip()
-        if "Appeared in:" in input:
-            newspaper_chunk = input.split("Appeared in:")[1].split("</td>")[0]
+        if "Appeared in:" in content:
+            newspaper_chunk = content.split("Appeared in:")[1].split("</td>")[0]
             self.newspaper = newspaper_chunk.split("<i>")[1].split("</i>")[0]
             formatted_dates = re.findall("\d\d/\d\d/\d\d\d\d",newspaper_chunk)
             for date_string in formatted_dates:
@@ -105,6 +116,10 @@ def get_top_page_number(page):
     top_page_number = sorted(pagenumbers)[-1]
     return top_page_number
 
+
+def daily_action():
+    fetcher = Fetcher()
+    fetcher.fetch_all()
 
 ### clustering
 

@@ -3,8 +3,6 @@ import geojson
 import os
 import pickle
 import re
-import requests
-import time
 import urllib2
 
 import idem_settings
@@ -117,7 +115,13 @@ class EnforcementQuerySession:
         name = document.name
         date = self.today
         address = get_enforcement_address(document)
-        facility = EnforcementSite(city=city, county=county, name=name, date=date, address=address)
+        if address is False:
+            address = ""
+        facility = EnforcementSite(city=city,
+                                   county=county,
+                                   name=name,
+                                   date=date,
+                                   full_address=address)
         facility.downloaded_docs.add(document)
         document.facility = facility
         return facility
@@ -164,7 +168,7 @@ class EnforcementQuerySession:
         if not self.log:
             return
         tsv = "\n".join([x.to_tsv() for x in self.updates])
-        writefile = open(os.path.join(self.directory, "updates_" + today.isoformat() + ".txt"), "w")
+        writefile = open(os.path.join(self.directory, "updates_" + self.today.isoformat() + ".txt"), "w")
         with writefile:
             writefile.write(tsv)
 
@@ -201,7 +205,6 @@ class EnforcementDoc(tea_core.Document):
 
     def __init__(self, **arguments):
         super(EnforcementDoc, self).__init__(**arguments)
-        pass
 
     def get_content(self):  # because these are simple HTML files
         try:
@@ -304,28 +307,6 @@ def get_enforcement_address(doc):
     return address
 
 
-def latlongify(facility):
-    address = facility.full_address
-    latitude, longitude, google_address = tea_core.coord_from_address(address)
-    facility.full_address = google_address
-    lat = float(latitude)
-    lon = float(longitude)
-    facility.latlong = (lat, lon)
-
-
-def actions_to_geojson(docs):
-    feature_list = []
-    for doc in docs:
-        # doc to geojson Feature
-        feature = doc_to_geojson(doc)
-        # put into list form for subsequent conversion
-        feature_list.append(feature)
-    # combine into geojson FeatureCollection
-    collection = geojson.FeatureCollection(feature_list)
-    json = geojson.dumps(collection)
-    return json
-
-
 def compose_popup(doc):
     popup = ""
     linkline = '<div class="popup-link"><a href="%s">%s</a></div>' % (doc.url, doc.doc_type)
@@ -336,27 +317,48 @@ def compose_popup(doc):
     return popup  # to do
 
 
-def doc_to_geojson(doc):
+def doc_to_geojson(doc,
+                   attempt_latlong=True,
+                   for_leaflet=True):
     facility = doc.facility
     # convert doc to geojson Feature:
     # 1. put properties into dict
     props = {
         "name": doc.facility.name,
-        "address": doc.facility.address,
-        "date": doc.date,
+        "address": doc.facility.full_address,
+        "date": doc.date.isoformat(),
         "docType": doc.doc_type,
         "url": doc.url,
         "popupContent": compose_popup(doc),
-        "documentContent": doc.content,
+        # "documentContent": doc.content,  # Unicode issues with serialization
     }
     # 2. obtain latlong if not present
+    if attempt_latlong and not facility.latlong:
+        tea_core.latlongify(facility)
     if not facility.latlong:
-        latlongify(facility)
+        return False
     coords = facility.latlong
+    if for_leaflet:  # LeafletJS uses reverse of GeoJSON order
+        coords = tuple(reversed(coords))
     # 3. compose as Point with properties
     point = geojson.Point(coords)
     feature = geojson.Feature(geometry=point, properties=props)
     return feature
+
+
+def actions_to_geojson(docs, attempt_latlong=True):
+    feature_list = []
+    for doc in docs:
+        # doc to geojson Feature
+        feature = doc_to_geojson(doc, attempt_latlong=attempt_latlong)
+        if feature is False:
+            continue
+        # put into list form for subsequent conversion
+        feature_list.append(feature)
+    # combine into geojson FeatureCollection
+    collection = geojson.FeatureCollection(feature_list)
+    json = geojson.dumps(collection)
+    return json
 
 
 def daily_action(date=datetime.date.today()):
@@ -371,7 +373,7 @@ def mock_specific_date(date):
     return session
 
 
-def mock_dates(start, end):
+def mock_dates(start, end):  # for retroactively creating history
     delta = datetime.timedelta(1)
     date = start
     sessions = []
@@ -401,7 +403,7 @@ def load_docs(path=make_pickle_path()):
     return docs
 
 
-def iso2datetime(isodate):
+def iso_to_datetime(isodate):
     year = int(isodate[:4])
     month = int(isodate[5:7])
     day = int(isodate[8:10])
@@ -409,32 +411,56 @@ def iso2datetime(isodate):
     return date
 
 
-def cycle_through_directory(directory=idem_settings.enforcementdir, county="Lake"):
-    def filter_files(this_file):
-        pattern = "\d{4}-\d{2}-\d{2}_%s.html" % county
-        is_match = re.match(pattern, this_file)
-        return is_match
-    files = [os.path.join(directory, x) for x in os.listdir(directory)]
-    files = [x for x in files if filter_files(x)]
-    docs = set()
-    addr_to_latlong = {}  # for storing calls for addresses already looked up
-    for f in files:
-        filename = os.path.split(f)[-1]
-        isodate = filename[:10]
-        date = iso2datetime(isodate)
-        session = EnforcementQuerySession(today=date, from_page=filename)
-        # find new docs, and add latlong as needed
-        new_docs = docs - session.docs
-        for doc in new_docs:
-            doc.file_date = date
-            site = doc.facility
-            addr = site.address.lower()  # normalize case
-            if not site.latlong:
-                if addr in addr_to_latlong.keys():
-                    site.latlong = addr_to_latlong[addr]
-                else:
-                    latlongify(site)
-                    addr_to_latlong[addr] = site.latlong
-        # add the new docs to the pile
-        docs |= new_docs
-    return docs
+class DirectoryCycler:
+
+    def __init__(self,
+                 docs=set(),
+                 sessions=list(),
+                 addr_to_latlong=None,
+                 date=datetime.date.today()):
+        self.docs = docs
+        self.sessions = sessions
+        self.addr_to_latlong = addr_to_latlong  # for storing calls for addresses already looked up
+        if self.addr_to_latlong is None:
+            self.addr_to_latlong = {}
+        self.date = date
+        self.directory = idem_settings.enforcementdir
+
+    def process_doc_in_cycle(self, doc):
+        doc.file_date = self.date
+        site = doc.facility
+        addr = site.full_address.lower()  # normalize case
+        if not site.latlong:
+            if addr in self.addr_to_latlong.keys():
+                site.latlong = self.addr_to_latlong[addr]
+            else:
+                tea_core.latlongify(site)
+                self.addr_to_latlong[addr] = site.latlong
+
+    def cycle_through_paths(self, paths):
+        for path in paths:
+            print path
+            filename = os.path.split(path)[-1]
+            isodate = filename[:10]
+            self.date = iso_to_datetime(isodate)
+            session = EnforcementQuerySession(today=self.date, from_page=path)
+            # find new docs, and add latlong as needed
+            new_docs = session.docs - self.docs
+            for doc in new_docs:
+                self.process_doc_in_cycle(doc)
+            self.sessions.append((isodate, session))
+            # add the new docs to the pile
+            self.docs |= new_docs
+        return self.docs
+
+    def cycle_through_directory(self, county="Lake"):
+        def filter_files(this_file):
+            pattern = "\d{4}-\d{2}-\d{2}_%s.html" % county
+            is_match = re.match(pattern, this_file)
+            return is_match
+        files = [x for x in os.listdir(self.directory) if filter_files(x)]
+        files.sort()
+        files = [os.path.join(self.directory, x) for x in files]
+        print len(files)
+        self.docs = self.cycle_through_paths(files)
+        return self.docs

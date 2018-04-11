@@ -1,36 +1,54 @@
-### permits
+# -*- coding: utf-8 -*-
 
-class Permit:
+import datetime
+import geojson
+import idem_settings
+import os
+import tea_core
+import urllib
+import urllib2
+
+permitdir = idem_settings.permitdir
+
+
+class Facility(tea_core.Facility):
+
+    def __init__(self, **arguments):
+        super(Facility, self).__init__(**arguments)
+
+
+class Permit(tea_core.Document):
     pm = ""
-    facility = ""
+    facility = Facility()
     comment_period = ""
-    start_date = False
-    end_date = False
     county = ""
     type = ""
     url = ""
     row = ""
     more = ""
     number = ""
-    row = ""
 
-    def __init__(self, row):
-        row = row.replace("&amp;", "&")
-        name, type, dates, comment, more = tuple(
-            [x.split(">", 1)[1].split("</td>")[0] for x in row.split("<td", 5)[1:]])
-        self.facility = name
-        self.type = type.split(">")[1].split("[")[0].split("<")[0].strip()
-        url = type.split('href="')[1].split('"')[0]
-        if url.startswith("/"):
-            url = "http://www.in.gov" + url
-        self.url = url
-        self.more = more
-        self.pm = self.extract_info("Project Manager:")
-        self.number = self.extract_info("Permit Number:")
-        if comment == "Yes":
-            self.comment_period = dates
-            self.convert_dates()
-        self.row = row
+    def __init__(self, **arguments):
+        super(Permit, self).__init__(**arguments)
+        if "row" in arguments.keys():
+            row = arguments["row"]
+            row = row.replace("&amp;", "&")
+            name, doc_type, dates, comment, more = tuple(
+                [x.split(">", 1)[1].split("</td>")[0] for x in row.split("<td", 5)[1:]])
+            self.facility = Facility(name=name)
+            self.doc_type = doc_type.split(">")[1].split("[")[0].split("<")[0].strip()
+            url = doc_type.split('href="')[1].split('"')[0]
+            if url.startswith("/"):
+                url = "http://www.in.gov" + url
+            self.url = url
+            self.more = more
+            self.pm = self.extract_info("Project Manager:")
+            self.number = self.extract_info("Permit Number:")
+            # to do: get program
+            if comment == "Yes":
+                self.comment_period = dates
+                self.convert_dates()
+            self.row = row
 
     def __eq__(self, other):
         return hash(self) == hash(other)
@@ -42,9 +60,16 @@ class Permit:
         return "\n".join(["%s: %s" % (x, getattr(self, x)) for x in dir(self) if not callable(x)])
 
     def data(self):
-        data = (self.facility, self.type, self.url, self.pm, self.number, self.county, self.comment_period)
+        data = (self.facility.name, self.type, self.url, self.pm, self.number, self.county, self.comment_period)
         data = tuple(map(lambda x: str(x), data))
         return data
+
+    def get_date_string(self, name="start_date"): # start_date or end_date
+        if hasattr(self, name):
+            date = getattr(self, name)
+            return date.isoformat()
+        else:
+            return ""
 
     def extract_info(self, label):
         if label in self.more:
@@ -55,7 +80,7 @@ class Permit:
             return False
 
     def is_comment_open(self, date=datetime.date.today()):
-        if self.start_date is False or self.end_date is False:
+        if not hasattr(self, "start_date") or not hasattr(self, "end_date"):
             return False
         else:
             if date > self.end_date:
@@ -77,7 +102,8 @@ class Permit:
             self.start_date = self.convert_single_date(start)
             self.end_date = self.convert_single_date(stop)
 
-    def convert_single_date(self, usdate):
+    @staticmethod
+    def convert_single_date(usdate):
         date = datetime.datetime.strptime(usdate, "%m/%d/%Y").date()
         return date
 
@@ -86,6 +112,9 @@ class PermitUpdater:
     directory = permitdir
     main_url = "http://www.in.gov/idem/6395.htm"
     whether_download = True
+    current = set()
+    new = set()
+    old = set()
 
     def __init__(self):
         self.date = datetime.date.today()
@@ -113,7 +142,8 @@ class PermitUpdater:
             permits |= countypermits
         return permits
 
-    def get_permits_from_section(self, countychunk):
+    @staticmethod
+    def get_permits_from_section(countychunk):
         permits = set()
         county, countyrows = tuple(countychunk.split("</th>", 1))
         if countyrows.count("</tr>") < 2:
@@ -122,7 +152,7 @@ class PermitUpdater:
         for row in rows_split:
             if row.count("<td") < 5:
                 continue
-            newpermit = Permit(row)
+            newpermit = Permit(row=row)
             newpermit.county = county
             permits.add(newpermit)
         return permits
@@ -131,14 +161,17 @@ class PermitUpdater:
         files = os.listdir(self.directory)
         files.sort()
         files = filter(lambda x: x.endswith(".htm"), files)
-        latest = files[-1]
-        today = datetime.date.today().isoformat()
-        if today in latest:  # avoid tripping over self
-            if len(files) > 1:
-                latest = files[-2]
-                print latest
-        latestpath = os.path.join(self.directory, latest)
-        oldpage = open(latestpath).read()
+        if not files:
+            oldpage = ""
+        else:
+            latest = files[-1]
+            today = datetime.date.today().isoformat()
+            if today in latest:  # avoid tripping over self
+                if len(files) > 1:
+                    latest = files[-2]
+                    print latest
+            latestpath = os.path.join(self.directory, latest)
+            oldpage = open(latestpath).read()
         newpage = self.check_new_permits()
         self.current = self.get_permits_from_page(newpage)
         self.new, self.old = self.compare_permits(newpage, oldpage)
@@ -172,7 +205,7 @@ class PermitUpdater:
         for permit in self.new:
             fileurl = permit.url
             filename = fileurl.split("/")[-1]
-            filename = self.date.isoformat() + "_" + permit.county + "_" + permit.facility + "_" + filename
+            filename = self.date.isoformat() + "_" + permit.county + "_" + permit.facility.name + "_" + filename
             filepath = os.path.join(self.directory, filename)
             urllib.urlretrieve(fileurl, filepath)
         return True
@@ -188,3 +221,68 @@ def daily_permit_check():
     return logtext
 
 
+# because of the limited automatically available data,
+# we'll just generate a skeleton that can be filled in
+# manually.
+def doc_to_geojson(permit,
+                   for_leaflet=True):
+    facility = permit.facility
+    # convert doc to geojson Feature:
+    # 1. put properties into dict
+    props = {
+        "name": permit.facility.name, # to do: convert to proper Facility() objects
+        "address": permit.facility.full_address,
+        "date": permit.date.isoformat(),
+        "docType": permit.doc_type,
+        "manager": permit.pm,
+        "program": permit.program,
+        "url": permit.url,
+        "popupContent": "",
+        "start": permit.get_date_string("start_date"),
+        "end": permit.get_date_string("end_date"),
+    }
+    # 2. obtain latlong if not present.
+    # If no address, just leave blank to fill in.
+    if facility.full_address and not facility.latlong:
+        tea_core.latlongify(facility)
+    coords = facility.latlong
+    if for_leaflet:  # LeafletJS uses reverse of GeoJSON order
+        coords = tuple(reversed(coords))
+    # 3. compose as Point with properties
+    point = geojson.Point(coords)
+    feature = geojson.Feature(geometry=point, properties=props)
+    return feature
+
+
+def geojson_to_doc(json):
+    pass
+
+
+def active_permits_to_geojson(documents):
+    features = []
+    for doc in documents:
+        if not doc.is_comment_open():
+            continue
+        new_feature = doc_to_geojson(doc)
+        features.append(new_feature)
+    collection = geojson.FeatureCollection(features)
+    return collection
+
+
+def build_permit_table(tsv):
+		newtable = '<h3>New permit notices</h3>\n<table><tr><th colspan="3">New notices today</th></tr>'
+		newtable += '\n<tr><th width="30%">Site</th><th>Document</th><th width="30%">Dates</th></tr>'
+		lines = tsv.split("\n")
+		lines = filter(lambda x:x.strip(),lines)
+		lines = filter(lambda x: "\t" in x,lines)
+		for line in lines:
+			if line.count("\t") != 6:
+				print "Error! %d tabs" % line.count("\t")
+			site,type,url,pm,permitnum,county,dates = line.split("\t")
+			newrow = "\n<tr>%s%s</tr>"
+			sitecell = '<td><a href="%s">%s (%s County)</a></td>' % (url, site, county)
+			datecell = "<td>%s</td>" % dates
+			newrow = newrow % (sitecell, datecell)
+			newtable += newrow
+		newtable += "</table>"
+		return newtable

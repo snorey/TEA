@@ -16,7 +16,6 @@ import datetime
 import os
 import re
 import time
-import unittest
 import urllib
 import urllib2
 import xml.parsers.expat
@@ -42,7 +41,7 @@ class TotalUpdater:
         # permits
         # zips
 
-### zips
+##zips
 
 def do_lake_zips(whether_download=True):
     batch = ZipCollection(lakezips, firsttime=False,whether_download=whether_download)
@@ -138,6 +137,14 @@ class ZipCollection(list):
             facility = self.iddic[id]
             facility.latlong = (lat, lon)
             facility.address = add
+
+    def get_all_docs_in_range(self, start_date, end_date):
+        docs_in_range = {}
+        for facility in self.facilities:
+            in_range = [x for x in facility.docs if x.file_date >= start_date and x.file_date <= end_date]
+            if in_range:
+                docs_in_range[facility] = in_range
+        return docs_in_range
 
 
 class ZipUpdater:
@@ -428,6 +435,7 @@ class ZipUpdater:
                     time.sleep(.1)
 
 
+
 class Facility:  # data structure
     vfc_name = ""
     vfc_address = ""
@@ -564,6 +572,25 @@ class Facility:  # data structure
         open(pagepath, "w").write(self.page)
         return self.page
 
+    def latlongify(self, force=False):
+        if hasattr(self, "latlong") and self.latlong is not False:
+            if not force:
+                return self.latlong
+        else:
+            result = coord_from_address(self.full_address)
+            print self.vfc_name, self.full_address
+            try:
+                lat, long, googleaddress = result
+            except TypeError, e:  # returned False?
+                print str(e)
+                print str(result)[:100]
+                return False
+            else:
+                print googleaddress
+                self.latlong = (float(lat), float(long))
+                self.address = googleaddress
+                return self.latlong
+
 
 class Document:
     url = ""
@@ -689,13 +716,13 @@ def get_individual_site_info(row):
     return id, name, address, city
 
 
-def get_latest_zip_page(zip, zipdir=False):
+def get_latest_zip_page(zip, zipdir=False, num_back = 1):
     if zipdir is False:
         zipdir = os.path.join(maindir, zip)
     logfilter = lambda x: x.endswith(".html") and x.startswith(zip)
     logpages = filter(logfilter, os.listdir(zipdir))
     logpages.sort()
-    if not logpages:
+    if len(logpages) < num_back:
         return ""
     newest = logpages[-1]
     path_to_newest = os.path.join(zipdir, newest)
@@ -797,16 +824,6 @@ def get_sites_with_activity(zip, sincedate=datetime.date(2017, 1, 1)):
     return sites_with_activity
 
 
-def get_enforcement_address(page):
-    page = re.sub("\s+", " ", page)
-    if " located at " not in page:
-        return False
-    addr = page.split(" located at ")[1]
-    addr = addr.split(" in ")[0].split(",")[0].split(".")[0]
-    addr = re.sub("<.+?>", "", addr)
-    return addr
-
-
 def addrs_are_same(add1, add2):
     if add1 == add2:
         return True
@@ -906,49 +923,6 @@ def get_total_from_page(page):
     return total
 
 
-def wp_login():
-    from wordpress_xmlrpc import Client
-    username = "Testy McTest"
-    password = "zTz3NB%kwth%K$YLRG"
-    client = Client('http://samhenderson.net/eco/xmlrpc.php', username, password)
-    return client
-
-
-def upload_post_text(text, publish=False, posttitle="", tags=[], slug=""):
-    from wordpress_xmlrpc import WordPressPost, Client
-    from wordpress_xmlrpc.methods.posts import GetPosts, NewPost, EditPost
-    from wordpress_xmlrpc.methods.users import GetUserInfo
-    post = WordPressPost()
-    client = wp_login()
-    print "Logged in..."
-    if not posttitle:
-        post.title = "Notifications for %s" % datetime.date.today().strftime("%B %d, %Y")
-    else:
-        post.title = posttitle
-    post.content = text
-    if tags:
-        tags = [x.lower().replace(" ", "-") for x in tags]
-        tags = [re.sub("[^\w\-]", "", x) for x in tags]
-        print str(tags)
-        post.terms_names['post_tag'] = tags
-    if not slug:
-        slug = posttitle.replace(",", "").replace(" ", "-").lower()
-    post.slug = slug
-    done = False
-    while not done:
-        try:
-            post.id = client.call(NewPost(post))
-        except Exception, e:  # debug tag issue
-            print str(e)
-            time.sleep(5)
-        else:
-            done = True
-    if publish:
-        post.post_status = 'publish'
-        client.call(EditPost(post.id, post))
-    return post.id
-
-
 def get_distance(point1,
                  point2):  # ex http://stackoverflow.com/questions/19412462/getting-distance-between-two-points-based-on-latitude-longitude
     from math import sin, cos, sqrt, atan2, radians
@@ -964,3 +938,5 @@ def get_distance(point1,
     c = 2 * atan2(sqrt(a), sqrt(1 - a))
     distance = R * c
     return distance
+
+
