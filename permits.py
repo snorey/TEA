@@ -9,6 +9,7 @@ import urllib
 import urllib2
 
 permitdir = idem_settings.permitdir
+tsv_first_line = "name	URL	PM	number	county	dates	VFC	address	latlong"
 
 
 class Facility(tea_core.Facility):
@@ -19,7 +20,6 @@ class Facility(tea_core.Facility):
 
 class Permit(tea_core.Document):
     pm = ""
-    facility = Facility()
     comment_period = ""
     county = ""
     type = ""
@@ -32,6 +32,10 @@ class Permit(tea_core.Document):
 
     def __init__(self, **arguments):
         super(Permit, self).__init__(**arguments)
+        self.facility = Facility()
+        if "tsv" in arguments.keys():
+            tsv = arguments["tsv"]
+            self.from_tsv(tsv)
         if "row" in arguments.keys():
             row = arguments["row"]
             row = row.replace("&amp;", "&")
@@ -51,9 +55,6 @@ class Permit(tea_core.Document):
                 self.comment_period = dates
                 self.convert_dates()
             self.row = row
-        elif "tsv" in arguments.keys():
-            tsv = arguments["tsv"]
-            self.from_tsv(tsv)
 
     def __eq__(self, other):
         return hash(self) == hash(other)
@@ -135,6 +136,7 @@ class Permit(tea_core.Document):
         vfc = self.facility.vfc_id
         address = self.facility.full_address
         latlong = self.facility.latlong
+
         def rectify(attribute):
             if attribute in [False, None]:
                 return ""
@@ -272,8 +274,8 @@ class PermitUpdater:
         return True
 
     def get_open_permits(self):
-        opens = filter(lambda x: x.is_comment_open(date=self.date), self.current)
-        return opens
+        open_permits = filter(lambda x: x.is_comment_open(date=self.date), self.current)
+        return open_permits
 
     @staticmethod
     def make_json_path():
@@ -283,20 +285,33 @@ class PermitUpdater:
         return name
 
     def to_tsv(self, filepath=None):
-        firstline = "name	URL	PM	number	county	dates	VFC	address	latlong"
-        tsv = firstline + "\n"
-        pass
+        tsv = tsv_first_line + "\n"
+        for permit in self.current:
+            newline = permit.to_tsv()
+            tsv += newline + "\n"
+        if filepath is None:
+            return tsv
+        else:
+            open(filepath, "w").write(tsv)
+            return filepath
 
-    def load_permit_info(self):
-        pass
-
+    def from_tsv(self, filepath):
+        tsv = open(filepath).read()
+        lines = [x.strip() for x in tsv.split("\n") if x.strip()]
+        if not lines:
+            return
+        if lines[0][:5] == tsv_first_line[:5]:
+            lines = lines[1:]
+        permits = [Permit(tsv=x) for x in lines]
+        self.current = permits
+        return permits
+        
 
 def daily_permit_check():
     updater = PermitUpdater()
     updater.do_daily_permit_check()
     updater.save_active_permits(county="Lake")
     return updater
-
 
 
 # because of the limited automatically available data,
@@ -308,7 +323,7 @@ def doc_to_geojson(permit,
     # convert doc to geojson Feature:
     # 1. put properties into dict
     props = {
-        "name": permit.facility.name, # to do: convert to proper Facility() objects
+        "name": permit.facility.name,  # to do: convert to proper Facility() objects
         "address": permit.facility.full_address,
         "date": permit.date.isoformat(),
         "docType": permit.doc_type,
@@ -332,22 +347,18 @@ def doc_to_geojson(permit,
     return feature
 
 
-def geojson_to_doc(json):
-    pass
-
-
 def filter_active_permits(documents, county="Lake"):
     # sort by start_date and filter out closed permits
     documents_ = set(documents)
     sortable = [(x.start_date, x) for x in documents_ if x.is_comment_open()]
     sortable.sort()
     documents_filtered = [x[1] for x in sortable]
-    if county:
+    if county is not None:
         documents_filtered = [x for x in documents_filtered if x.county.upper() == county.upper()]
     return documents_filtered
 
 
-def active_permits_to_geojson(documents, county=False):
+def active_permits_to_geojson(documents, county=None):
     # filter out inactive and inapplicable documents
     documents = filter_active_permits(documents, county=county)
     # convert to feature list
@@ -360,19 +371,19 @@ def active_permits_to_geojson(documents, county=False):
 
 
 def build_permit_table(tsv):
-		newtable = '<h3>New permit notices</h3>\n<table><tr><th colspan="3">New notices today</th></tr>'
-		newtable += '\n<tr><th width="30%">Site</th><th>Document</th><th width="30%">Dates</th></tr>'
-		lines = tsv.split("\n")
-		lines = filter(lambda x:x.strip(),lines)
-		lines = filter(lambda x: "\t" in x,lines)
-		for line in lines:
-			if line.count("\t") != 6:
-				print "Error! %d tabs" % line.count("\t")
-			site,type,url,pm,permitnum,county,dates = line.split("\t")
-			newrow = "\n<tr>%s%s</tr>"
-			sitecell = '<td><a href="%s">%s (%s County)</a></td>' % (url, site, county)
-			datecell = "<td>%s</td>" % dates
-			newrow = newrow % (sitecell, datecell)
-			newtable += newrow
-		newtable += "</table>"
-		return newtable
+    newtable = '<h3>New permit notices</h3>\n<table><tr><th colspan="3">New notices today</th></tr>'
+    newtable += '\n<tr><th width="30%">Site</th><th>Document</th><th width="30%">Dates</th></tr>'
+    lines = tsv.split("\n")
+    lines = filter(lambda x: x.strip(), lines)
+    lines = filter(lambda x: "\t" in x, lines)
+    for line in lines:
+        if line.count("\t") != 6:
+            print "Error! %d tabs" % line.count("\t")
+        site, doctype, url, pm, permitnum, county, dates = line.split("\t")
+        newrow = "\n<tr>%s%s</tr>"
+        sitecell = '<td><a href="%s">%s (%s County)</a></td>' % (url, site, county)
+        datecell = "<td>%s</td>" % dates
+        newrow = newrow % (sitecell, datecell)
+        newtable += newrow
+    newtable += "</table>"
+    return newtable
