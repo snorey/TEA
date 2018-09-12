@@ -187,7 +187,7 @@ class ZipCollection(list):
         facilities = [x[1] for x in facilities_in_range]
         return facilities
 
-    def dump_latlongs(self, filepath="/home/sam/facilitydump.txt"):
+    def dump_latlongs(self, filepath=latlong_filepath):
         output = ""
         for facility in self.facilities:
             facility_id = facility.vfc_id

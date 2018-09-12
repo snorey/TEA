@@ -131,18 +131,18 @@ class Permit(tea_core.Document):
         url = self.url
         pm = self.pm
         number = self.number
-        county = self.facility.county
+        county = self.county
         dates = self.comment_period
         vfc = self.facility.vfc_id
         address = self.facility.full_address
         latlong = self.facility.latlong
+        attrs = [name, url, pm, number, county, dates, vfc, address, latlong]
 
         def rectify(attribute):
-            if attribute in [False, None]:
+            if bool(attribute) is False:
                 return ""
             else:
                 return str(attribute)
-        attrs = [name, url, pm, number, county, dates, vfc, address, latlong]
         attrs = [rectify(x) for x in attrs]
         tsv = "\t".join(attrs)
         return tsv
@@ -153,7 +153,7 @@ class Permit(tea_core.Document):
         self.url = url
         self.pm = pm
         self.number = number
-        self.facility.county = county
+        self.county = county
         self.comment_period = dates
         self.facility.vfc_id = vfc
         self.facility.full_address = address
@@ -297,15 +297,21 @@ class PermitUpdater:
 
     def from_tsv(self, filepath):
         tsv = open(filepath).read()
-        lines = [x.strip() for x in tsv.split("\n") if x.strip()]
-        if not lines:
-            return
-        if lines[0][:5] == tsv_first_line[:5]:
-            lines = lines[1:]
-        permits = [Permit(tsv=x) for x in lines]
+        permits = tsv_to_permits(tsv)
         self.current = permits
         return permits
-        
+
+
+def tsv_to_permits(tsv):
+    lines = [x for x in tsv.split("\n") if x.strip()]
+    if not lines:
+        return set()
+    if lines[0][:5] == tsv_first_line[:5]:
+        lines = lines[1:]
+    permits = [Permit(tsv=x) for x in lines]
+    permits = set(permits)
+    return permits
+
 
 def daily_permit_check():
     updater = PermitUpdater()
@@ -323,7 +329,7 @@ def doc_to_geojson(permit,
     # convert doc to geojson Feature:
     # 1. put properties into dict
     props = {
-        "name": permit.facility.name,  # to do: convert to proper Facility() objects
+        "name": permit.facility.name,
         "address": permit.facility.full_address,
         "date": permit.date.isoformat(),
         "docType": permit.doc_type,
