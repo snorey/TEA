@@ -66,31 +66,50 @@ class ZipCycler:
         return self.new
 
     def latlongify_updated(self, filepath=latlong_filepath):
-        idcol = 0
-        latcol = 2
-        loncol = 3
-        addcol = 4
         iddic = dict([(x.vfc_id, x) for x in self.updated])
         ids = set(iddic.keys())
         for line in open(filepath):
-            if not line.strip() or "\t" not in line:
+            data = process_location_line(line)
+            if data is None:
                 continue
-            pieces = line.split("\t")
-            facility_id = pieces[idcol]
+            else:
+                facility_id, name, latlong, address = data
             if facility_id not in ids:
                 continue
-            latstring = pieces[latcol]
-            lonstring = pieces[loncol]
-            address = pieces[addcol].strip()  # avoid trailing newline
-            if not latstring or not lonstring:
-                latlong = False
-            else:
-                lat = float(latstring)
-                lon = float(lonstring)
-                latlong = (lat, lon)
             facility = iddic[facility_id]
             facility.latlong = latlong
             facility.google_address = address
+
+
+def process_location_line(line):
+    idcol = 0
+    namecol = 1
+    latcol = 2
+    loncol = 3
+    addcol = 4
+    if not line.strip() or "\t" not in line:
+        return
+    pieces = line.split("\t")
+    facility_id = pieces[idcol]
+    latstring = pieces[latcol]
+    lonstring = pieces[loncol]
+    name = pieces[namecol]
+    address = pieces[addcol].strip()  # avoid trailing newline
+    if not latstring or not lonstring:
+        latlong = False
+    else:
+        lat = float(latstring)
+        lon = float(lonstring)
+        latlong = (lat, lon)
+    return facility_id, name, latlong, address
+
+
+def get_location_data(filepath=latlong_filepath):
+    data = []
+    for line in open(filepath):
+        linedata = process_location_line(line)
+        data.append(linedata)
+    return data
 
 
 class ZipCollection(list):
@@ -202,7 +221,6 @@ class ZipCollection(list):
             line = "\t".join([facility_id, name, lat, lon, address])
             output += line + "\n"
         open(filepath, "w").write(output)
-        return output
 
     def reload_latlongs(self, filepath=latlong_filepath):
         idcol = 0
@@ -253,6 +271,11 @@ class ZipCollection(list):
             if facility.whether_to_update:
                 to_do.append(facility)
         return to_do
+
+    def latlongify(self):
+        for facility in self.facilities:
+            if not facility.latlong:
+                facility.latlongify()
 
 
 class ZipUpdater:
@@ -578,20 +601,9 @@ class ZipUpdater:
 
     def latlongify(self):
         for facility in self.facilities:
-            if hasattr(facility, "latlong") and facility.latlong is not False:
-                continue
-            else:
-                try:
-                    lat, lon, googleaddress = coord_from_address(facility.full_address)
-                except TypeError, e:  # returned False?
-                    print str(e)
-                    pass
-                else:
-                    print facility.vfc_name, facility.full_address
-                    print googleaddress
-                    facility.latlong = (float(lat), float(lon))
-                    facility.address = googleaddress
-                    time.sleep(tea_core.DEFAULT_SHORT_WAIT)
+            if not facility.latlong:
+                facility.latlongify()
+            time.sleep(tea_core.DEFAULT_SHORT_WAIT)
 
 
 class Facility:  # data structure
@@ -856,7 +868,6 @@ class Facility:  # data structure
                 return self.latlong
         else:
             result = coord_from_address(self.full_address)
-            print self.vfc_name, self.full_address
             try:
                 lat, lon, googleaddress = result
             except TypeError, e:  # returned False?
@@ -864,7 +875,6 @@ class Facility:  # data structure
                 print str(result)[:100]
                 return False
             else:
-                print googleaddress
                 self.latlong = (float(lat), float(lon))
                 self.google_address = googleaddress
                 return self.latlong

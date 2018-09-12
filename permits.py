@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import collections
 import datetime
 import geojson
 import idem_settings
@@ -60,7 +61,10 @@ class Permit(tea_core.Document):
         return hash(self) == hash(other)
 
     def __hash__(self):
-        return hash(self.data())
+        if self.url:
+            return hash(self.url)
+        else:
+            return hash(self.data())
 
     def __str__(self):
         attrs = [x for x in dir(self) if not callable(x)]
@@ -301,6 +305,31 @@ class PermitUpdater:
         self.current = permits
         return permits
 
+    def load_vfc(self):
+        vfcable = [x for x in self.current if x.facility.vfc_id]
+        ids = [x.facility.vfc_id for x in vfcable]
+        result = ids_to_facilities(ids)  # name, latlong, address
+        for v in vfcable:
+            facility_data = result[v.facility.vfc_id]
+            if facility_data:
+                name, latlong, address = facility_data
+                if not v.facility.name:  # names given in public notices are often more accurate than VFC names
+                    v.facility.name = name
+                v.facility.latlong = latlong
+                v.facility.full_address = address
+
+    def latlongify(self):
+        for permit in self.current:
+            if permit.facility.latlong:
+                continue
+            elif permit.facility.full_address:
+                permit.facility.latlongify()
+
+    def to_json(self, county="Lake"):
+        documents = self.current
+        json = active_permits_to_geojson(documents, county)
+        return json
+
 
 def tsv_to_permits(tsv):
     lines = [x for x in tsv.split("\n") if x.strip()]
@@ -343,7 +372,9 @@ def doc_to_geojson(permit,
     # 2. obtain latlong if not present.
     # If no address, just leave blank to fill in.
     if facility.full_address and not facility.latlong:
-        tea_core.latlongify(facility)
+        facility.latlongify()
+    if not facility.latlong:
+        return None
     coords = facility.latlong
     if for_leaflet:  # LeafletJS uses reverse of GeoJSON order
         coords = tuple(reversed(coords))
@@ -393,3 +424,71 @@ def build_permit_table(tsv):
         newtable += newrow
     newtable += "</table>"
     return newtable
+
+
+def ids_to_facilities(ids):
+    iddic = collections.defaultdict(tuple)
+    from idem import get_location_data
+    data = get_location_data()
+    for datum in data:
+        facility_id, name, latlong, address = datum
+        iddic[facility_id] = (name, latlong, address)
+    output = {}
+    for facility_id in ids:
+        output[facility_id] = iddic[facility_id]
+    return output
+
+
+def get_daily_filepath(suffix, date=None):
+    if date is None:
+        date = datetime.date.today()
+    isodate = date.isoformat()
+    pattern = "permits_%s.%s"
+    filename = pattern % (isodate, suffix)
+    filepath = os.path.join(permitdir, filename)
+    return filepath
+
+
+def get_tsv_filepath(date=None):
+    filepath = get_daily_filepath("tsv", date=date)
+    return filepath
+
+
+def get_json_filepath(date=None):
+    filepath = get_daily_filepath("json", date=date)
+    return filepath
+
+
+def get_latest_tsv():
+    files_in_directory = os.listdir(permitdir)
+    tsvfiles = [x for x in files_in_directory if x.startswith("permits_") and x.endswith(".tsv")]
+    if not tsvfiles:
+        return None
+    else:
+        tsvfiles.sort()
+        latestfile = tsvfiles[-1]
+        filepath = os.path.join(permitdir, latestfile)
+        return filepath
+
+
+def write_usable_json(updater, path):
+    json = updater.to_json()
+    json = "var permits = " + json
+    open(path, "w").write(json)
+
+
+def do_cron():  # may need to split this into a morning and evening cron
+    updater = PermitUpdater()
+    updater.do_daily_permit_check()
+    inpath = get_latest_tsv()
+    updater.from_tsv(inpath)
+    updater.load_vfc()
+    updater.latlongify()
+    outpath = get_tsv_filepath()
+    updater.to_tsv(outpath)
+    jsonpath = get_json_filepath()
+    write_usable_json(updater, jsonpath)
+
+
+if __name__ == "__main__":
+    do_cron()

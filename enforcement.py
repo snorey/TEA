@@ -28,7 +28,7 @@ class EnforcementQuerySession:
         self.directory = directory
         self.page = ""
         self.rows = []
-        self.docs = set()
+        self.docs = set()`
         self.today = today
         self.verbose = verbose
         self.url = self.build_url()

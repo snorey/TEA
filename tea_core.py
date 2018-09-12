@@ -117,6 +117,9 @@ class Facility(object):
             self.page = page
         return set()
 
+    def latlongify(self):
+        latlongify(self)
+
 
 class Document(object):
     url = ""
