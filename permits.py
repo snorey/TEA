@@ -37,6 +37,7 @@ class Permit(tea_core.Document):
         if "tsv" in arguments.keys():
             tsv = arguments["tsv"]
             self.from_tsv(tsv)
+            self.convert_dates()
         if "row" in arguments.keys():
             row = arguments["row"]
             row = row.replace("&amp;", "&")
@@ -96,6 +97,8 @@ class Permit(tea_core.Document):
     def is_comment_open(self, date=datetime.date.today()):
         if not hasattr(self, "start_date") or not hasattr(self, "end_date"):
             return False
+        if not self.start_date or not self.end_date:
+            return False
         else:
             if date > self.end_date:
                 return False
@@ -152,6 +155,7 @@ class Permit(tea_core.Document):
         return tsv
 
     def from_tsv(self, line):
+        print line
         name, url, pm, number, county, dates, vfc, address, latlong = line.split("\t")
         self.facility.name = name
         self.url = url
@@ -161,20 +165,22 @@ class Permit(tea_core.Document):
         self.comment_period = dates
         self.facility.vfc_id = vfc
         self.facility.full_address = address
-        self.facility.latlong = latlong
+        if latlong:
+            self.facility.latlong = destring_latlong(latlong)
 
 
 class PermitUpdater:
     directory = permitdir
     main_url = "http://www.in.gov/idem/6395.htm"
     whether_download = True
-    current = set()
-    new = set()
-    old = set()
     logtext = ""
 
     def __init__(self):
         self.date = datetime.date.today()
+        self.current = set()
+        self.new = set()
+        self.old = set()
+        self.urldic = {}
 
     def check_new_permits(self):  # return row data for new permits
         page = urllib2.urlopen(self.main_url).read()
@@ -199,6 +205,11 @@ class PermitUpdater:
             permits |= countypermits
         return permits
 
+    def rebuild_urldic(self):
+        for permit in self.current:
+            if permit.url:
+                self.urldic[permit.url] = permit
+
     @staticmethod
     def get_permits_from_section(countychunk):
         permits = set()
@@ -214,7 +225,9 @@ class PermitUpdater:
             permits.add(newpermit)
         return permits
 
-    def do_daily_permit_check(self):
+    def do_daily_permit_check(self, date=None):
+        if date is None:
+            date = datetime.date.today()
         files = os.listdir(self.directory)
         files.sort()
         files = filter(lambda x: x.endswith(".htm"), files)
@@ -222,7 +235,7 @@ class PermitUpdater:
             oldpage = ""
         else:
             latest = files[-1]
-            today = datetime.date.today().isoformat()
+            today = date.isoformat()
             if today in latest:  # avoid tripping over self
                 if len(files) > 1:
                     latest = files[-2]
@@ -232,6 +245,7 @@ class PermitUpdater:
         newpage = self.check_new_permits()
         self.current = self.get_permits_from_page(newpage)
         self.new, self.old = self.compare_permits(newpage, oldpage)
+        self.rebuild_urldic()
         logtext = self.log_permit_updates()
         self.download_new_permits()
         return logtext
@@ -266,13 +280,17 @@ class PermitUpdater:
         self.logtext = logtext
         return logtext
 
-    def download_new_permits(self):
+    def download_new_permits(self, skip_existing=True):
         if not self.whether_download:
             return False
+        files = set(os.listdir(permitdir))
         for permit in self.new:
             fileurl = permit.url
             filename = fileurl.split("/")[-1]
             filename = self.date.isoformat() + "_" + permit.county + "_" + permit.facility.name + "_" + filename
+            if skip_existing:
+                if filename in files:
+                    continue
             filepath = os.path.join(self.directory, filename)
             urllib.urlretrieve(fileurl, filepath)
         return True
@@ -302,7 +320,21 @@ class PermitUpdater:
     def from_tsv(self, filepath):
         tsv = open(filepath).read()
         permits = tsv_to_permits(tsv)
-        self.current = permits
+        existing_urls = set(self.urldic.keys())
+        for p in permits:
+            if p.url in existing_urls:
+                existing_permit = self.urldic[p.url]
+                if not existing_permit.facility.name:
+                    existing_permit.facility.name = p.facility.name
+                if not existing_permit.facility.full_address:
+                    existing_permit.facility.full_address = p.facility.full_address
+                if not existing_permit.facility.latlong:
+                    existing_permit.facility.latlong = p.facility.latlong
+                if not existing_permit.facility.vfc_id:
+                    existing_permit.facility.vfc_id = p.facility.vfc_id
+            else:
+                self.current.add(p)
+        self.rebuild_urldic()
         return permits
 
     def load_vfc(self):
@@ -473,8 +505,18 @@ def get_latest_tsv():
 
 def write_usable_json(updater, path):
     json = updater.to_json()
-    json = "var permits = " + json
-    open(path, "w").write(json)
+    json_str = geojson.dumps(json)
+    json_str = "var permits = " + json_str
+    open(path, "w").write(json_str)
+
+
+def destring_latlong(str_latlong):
+    if ", " not in str_latlong:
+        return str_latlong
+    str_latlong = str_latlong.strip()[1:-1]  # trim parentheses
+    pieces = str_latlong.split(", ")
+    lat, lon = [float(x) for x in pieces]
+    return lat, lon
 
 
 def do_cron():  # may need to split this into a morning and evening cron
