@@ -560,11 +560,14 @@ def build_popup(permit):
     name = permit.facility.name
     address = permit.facility.full_address
     linkline = '<a href="%s" target="blank">%s</a>' % (url, name)
+    if permit.program:
+        linkline += permit.program
     description = address
     if permit.comment_period:
-        period = permit.comment_period
+        period = "Comment period: " + permit.comment_period
     else:
         period = ""
+    period += '&nbsp;(<a href="%s" target="blank">Read document</s>)' % url
     for line in [linkline, description, period]:
         popup += "<p>%s</p>\n" % line
     return popup
