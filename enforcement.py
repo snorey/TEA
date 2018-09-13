@@ -8,6 +8,8 @@ import urllib2
 import idem_settings
 import tea_core
 
+enforcementdir = idem_settings.enforcementdir
+
 # get enforcements from past 90 days
 # process enforcements into standardized data objects
 # compare items received with existing items
@@ -20,7 +22,7 @@ class EnforcementQuerySession:
                  county="Lake",
                  today=datetime.date.today(),
                  days=90,
-                 directory=idem_settings.enforcementdir,
+                 directory=enforcementdir,
                  from_page="",
                  verbose=False):
         self.county = county
@@ -385,7 +387,7 @@ def daily_action(date=datetime.date.today()):
 
 
 def get_daily_filepath(suffix, date=None):
-    filepath = tea_core.get_daily_filepath(suffix, date, idem_settings.enforcementdir)
+    filepath = tea_core.get_daily_filepath(suffix, date, enforcementdir)
     return filepath
 
 
@@ -413,7 +415,7 @@ def mock_dates(start, end):  # for retroactively creating history
 
 
 def make_pickle_path(filename="saved.pickle"):
-    directory = idem_settings.enforcementdir
+    directory = enforcementdir
     path = os.path.join(directory, filename)
     return path
 
@@ -508,7 +510,7 @@ class DirectoryCycler:
         if self.addr_to_latlong is None:
             self.addr_to_latlong = {}
         self.date = date
-        self.directory = idem_settings.enforcementdir
+        self.directory = enforcementdir
 
     def process_doc_in_cycle(self, doc):
         doc.file_date = self.date
