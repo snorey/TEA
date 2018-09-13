@@ -11,6 +11,7 @@ import urllib2
 
 permitdir = idem_settings.permitdir
 tsv_first_line = "name	URL	PM	number	county	dates	VFC	address	latlong"
+latest_json_path = os.path.join(permitdir, "latest_permits.json")
 
 
 class Facility(tea_core.Facility):
@@ -536,7 +537,7 @@ def write_usable_json(updater, path):
 
 def destring_latlong(str_latlong):
     """
-    :param str_latlong: latlong tuple after coercion to string
+    :param str_latlong: string-coerced latlong tuple
     :type str_latlong: str
     :return: tuple
     """
