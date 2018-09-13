@@ -41,23 +41,7 @@ class Permit(tea_core.Document):
             self.convert_dates()
         if "row" in arguments.keys():
             row = arguments["row"]
-            row = row.replace("&amp;", "&")
-            name, doc_type, dates, comment, more = tuple(
-                [x.split(">", 1)[1].split("</td>")[0] for x in row.split("<td", 5)[1:]])
-            self.facility = Facility(name=name)
-            self.doc_type = doc_type.split(">")[1].split("[")[0].split("<")[0].strip()
-            url = doc_type.split('href="')[1].split('"')[0]
-            if url.startswith("/"):
-                url = "http://www.in.gov" + url
-            self.url = url
-            self.more = more
-            self.pm = self.extract_info("Project Manager:")
-            self.number = self.extract_info("Permit Number:")
-            self.program = infer_program_from_url(url)
-            if comment == "Yes":
-                self.comment_period = dates
-                self.convert_dates()
-            self.row = row
+            self.from_row(row)
 
     def __eq__(self, other):
         return hash(self) == hash(other)
@@ -168,6 +152,40 @@ class Permit(tea_core.Document):
         self.facility.full_address = address
         if latlong:
             self.facility.latlong = destring_latlong(latlong)
+
+    def from_row(self, row):
+        row = row.replace("&amp;", "&")
+        cells = self.get_cells_from_row(row)
+        name, doc_cell, dates, comment, more = cells
+        self.facility = Facility(name=name)
+        self.doc_type, self.url = self.get_data_from_doc_cell(doc_cell)
+        self.more = more
+        self.pm = self.extract_info("Project Manager:")
+        self.number = self.extract_info("Permit Number:")
+        self.program = infer_program_from_url(url)
+        if comment == "Yes":
+            self.comment_period = dates
+            self.convert_dates()
+        self.row = row
+
+    @staticmethod
+    def get_cells_from_row(row):
+        chunks = row.split("<td", 5)
+        chunks = chunks[1:]
+        cells = []
+        for chunk in chunks:
+            cell = chunk.split(">", 1)[1].split("</td>")[0]
+            cells.append(cell)
+        return cells
+
+    @staticmethod
+    def get_data_from_doc_cell(doc_cell):
+        doc_type = doc_cell.split(">")[1].split("[")[0].split("<")[0]
+        doc_type = doc_type.strip()
+        url = doc_cell.split('href="')[1].split('"')[0]
+        if url.startswith("/"):
+            url = "http://www.in.gov" + url
+        return doc_type, url
 
 
 def infer_program_from_url(url):
