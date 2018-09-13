@@ -303,6 +303,7 @@ class ZipUpdater:
         self.current_facility = None
         self.updated_facilities = []
         self.logtext = ""
+        self.worry_about_crawl_date = True
 
     def go_offline(self):
         self.whether_download = False
@@ -486,17 +487,21 @@ class ZipUpdater:
             resultcount = 20
         else:
             resultcount = 500
-        starturl = "https://ecm.idem.in.gov/cs/idcplg?IdcService=GET_SEARCH_RESULTS"
-        starturl += "&QueryText=xAIID+%3Ccontains%3E+`" + self.current_facility.vfc_id + "`"
-        starturl += "&listTemplateId=SearchResultsIDEM&searchFormType=standard"
-        starturl += "&SearchQueryFormat=UNIVERSAL&ftx=&AdvSearch=True&ResultCount="
-        starturl += str(resultcount) + "&SortField=dInDate&SortOrder=Desc"
+        starturl = self.build_start_url(resultcount)
         page = get_page_patiently(starturl, session=self.session)
         self.current_facility.page = page
         pagefilename = self.current_facility.vfc_id + "_" + self.date.isoformat()
         pagepath = os.path.join(self.current_facility.directory, pagefilename)
         open(pagepath, "w").write(page)
         return page
+
+    def build_start_url(self, resultcount=20):
+        starturl = "https://ecm.idem.in.gov/cs/idcplg?IdcService=GET_SEARCH_RESULTS"
+        starturl += "&QueryText=xAIID+%3Ccontains%3E+`" + self.current_facility.vfc_id + "`"
+        starturl += "&listTemplateId=SearchResultsIDEM&searchFormType=standard"
+        starturl += "&SearchQueryFormat=UNIVERSAL&ftx=&AdvSearch=True&ResultCount="
+        starturl += str(resultcount) + "&SortField=dInDate&SortOrder=Desc"
+        return starturl
 
     def check_and_make_facility_directory(self):
         self.current_facility.directory = os.path.join(self.directory, self.current_facility.vfc_id)
@@ -571,7 +576,7 @@ class ZipUpdater:
         return True
 
     def get_facility_from_row(self, row):
-        facility = Facility(row=row, parent=self)
+        facility = Facility(row=row, parent=self, worry_about_crawl_date=self.worry_about_crawl_date)
         return facility
 
     @staticmethod
@@ -612,8 +617,10 @@ class Facility:  # data structure
     page = ""
     parent = None
     resultcount = 20
+    worry_about_crawl_date = True
+    filenamedic = None
 
-    def __init__(self, row=None, parent=None, directory=None, date=None, vfc_id=None, retrieve=False):
+    def __init__(self, row=None, parent=None, directory=None, date=None, vfc_id=None, retrieve=False, **arguments):
         self.updated_docs = set()
         self.downloaded_filenames = set()
         self.session = requests.Session()
@@ -644,6 +651,9 @@ class Facility:  # data structure
         if not self.downloaded_filenames:
             self.downloaded_filenames = self.get_downloaded_docs()
         self.docs = self.docs_from_directory()
+        self.build_filenamedic()
+        if arguments:
+            tea_core.assign_values(self, arguments, tolerant=True)
 
     def get_downloaded_docs(self):
         if self.directory:
@@ -673,7 +683,11 @@ class Facility:  # data structure
 
     def docs_from_directory(self):
         filenames = os.listdir(self.directory)
-        docs = self.docs_from_pages(filenames)
+        if self.worry_about_crawl_date:
+            docs = self.docs_from_pages(filenames)
+        else:
+            self.get_latest_page()
+            docs = self.docs_from_page(self.page)
         self.docs = docs
         return docs
 
@@ -748,6 +762,7 @@ class Facility:  # data structure
             filenames = set(self.filenamedic.keys()) - self.downloaded_filenames
             filenames = sorted(list(filenames))
         for filename in filenames:
+            print filename, "%d/%d" % (1 + filenames.index(filename), len(filenames))
             doc = self.download_filename(filename)
             allfiles.add(doc)
             self.downloaded_filenames.add(filename)
@@ -755,7 +770,6 @@ class Facility:  # data structure
 
     def download_filename(self, filename):
         doc = self.filenamedic[filename]
-        print doc.filename, "%d/%d" % (1 + filenames.index(filename), len(filenames))
         doc.path = os.path.join(self.directory, filename)
         doc.retrieve_file_patiently()
         return doc
