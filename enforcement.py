@@ -228,6 +228,14 @@ class EnforcementSite(tea_core.Facility):
     def get_downloaded_docs(self):
         return set()
 
+    def latlongify(self):
+        if self.full_address:
+            tea_core.latlongify(self)
+        else:
+            pseudo_address = ", ".join([self.name, self.city, "IN", "USA"])  # todo: fix this to use viewport biasing
+            result = tea_core.coord_from_address(pseudo_address)
+            tea_core.apply_data_to_facility(self, result)
+
 
 def remove_comments(html):
     clean_html = re.sub("<!--[\s\S]+?-->", "", html)
@@ -334,7 +342,7 @@ def doc_to_geojson(doc,
     }
     # 2. obtain latlong if not present
     if attempt_latlong and not facility.latlong:
-        tea_core.latlongify(facility)
+        facility.latlongify()
     if not facility.latlong:
         return False
     coords = facility.latlong
@@ -361,10 +369,29 @@ def actions_to_geojson(docs, attempt_latlong=True):
     return json
 
 
+def write_usable_json(docs, filepath=None):
+    if filepath is None:
+        filepath = get_json_filepath()
+    json = actions_to_geojson(docs)
+    json = "var enforcements = " + json
+    open(filepath, "w").write(json)
+    return filepath
+
+
 def daily_action(date=datetime.date.today()):
     session = EnforcementQuerySession(today=date)
     session.fetch_all()
     return session
+
+
+def get_daily_filepath(suffix, date=None):
+    filepath = tea_core.get_daily_filepath(suffix, date, idem_settings.enforcementdir)
+    return filepath
+
+
+def get_json_filepath(date=None):
+    filepath = get_daily_filepath("json", date=date)
+    return filepath
 
 
 def mock_specific_date(date):
@@ -411,6 +438,57 @@ def iso_to_datetime(isodate):
     return date
 
 
+def get_best_line_for_doc(doc, lines):
+    """
+    Out of the lines from the "facilitydump.txt" file, find best match for a particular enforcement action.
+    :param doc: Document
+    :param lines: cleaned and separated lines from the facilitydump.txt file
+    :return: str
+    """
+    if doc.facility.full_address:
+        return
+    words = doc.name.split(" ")
+    matches = [x for x in lines if words[0] in x and doc.city in x]  # assumes NAME in caps and City in titlecase
+    print doc.name, doc.city, len(matches)
+    if not matches:
+        return
+    elif len(matches) == 1:
+        best_match = matches[0]
+    else:
+        better_matches = [x for x in matches if x.startswith(doc.name)]
+        if better_matches:
+            best_match = better_matches[0]
+        else:
+            best_match = matches[0]
+    return best_match
+
+
+def assign_vfc_data_to_doc(document, line):
+    vfc_id, vfc_name, lat, lon, address = line.split("\t")
+    fac = document.facility
+    fac.vfc_id = vfc_id
+    fac.vfc_name = vfc_name
+    if lat and lon:
+        lat = float(lat)
+        lon = float(lon)
+        fac.latlong = (lat, lon)
+    fac.full_address = address
+
+
+def pull_vfc_geodata(docs):
+    from idem import latlong_filepath
+    path = latlong_filepath
+    lines = [x.strip() for x in open(path)]
+    associations = []
+    for d in docs:
+        best_match = get_best_line_for_doc(d, lines)
+        if not best_match:
+            continue
+        associations.append((d, best_match))
+    for document, line in associations:
+        assign_vfc_data_to_doc(document, line)
+
+
 class DirectoryCycler:
 
     def __init__(self,
@@ -421,7 +499,7 @@ class DirectoryCycler:
         if docs is None:
             docs = set()
         if sessions is None:
-            sessions = list
+            sessions = []
         if date is None:
             date = datetime.date.today()
         self.docs = docs
@@ -470,3 +548,7 @@ class DirectoryCycler:
         print len(files)
         self.docs = self.cycle_through_paths(files)
         return self.docs
+
+
+def do_cron():
+    daily_action()
