@@ -28,7 +28,7 @@ class EnforcementQuerySession:
         self.directory = directory
         self.page = ""
         self.rows = []
-        self.docs = set()`
+        self.docs = set()
         self.today = today
         self.verbose = verbose
         self.url = self.build_url()
@@ -414,10 +414,16 @@ def iso_to_datetime(isodate):
 class DirectoryCycler:
 
     def __init__(self,
-                 docs=set(),
-                 sessions=list(),
+                 docs=None,
+                 sessions=None,
                  addr_to_latlong=None,
-                 date=datetime.date.today()):
+                 date=None):
+        if docs is None:
+            docs = set()
+        if sessions is None:
+            sessions = list
+        if date is None:
+            date = datetime.date.today()
         self.docs = docs
         self.sessions = sessions
         self.addr_to_latlong = addr_to_latlong  # for storing calls for addresses already looked up
