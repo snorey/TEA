@@ -1479,7 +1479,7 @@ def setup_collection(zips=lakezips):
     return collection
 
 
-def collection_to_json(collection, lookback=7, filepath=None):
+def save_active_sites_as_json(collection, lookback=7, filepath=None):
     refdate = get_reference_date(lookback)
     print "Reference date: ", refdate.isoformat()
     # fourth, write JSON to disk
@@ -1497,7 +1497,7 @@ def do_cron():
     today = datetime.date.today()
     filename = "idem_%s.json" % today.isoformat()
     filepath = os.path.join(idem_settings.maindir, filename)
-    collection_to_json(collection, lookback=7, filepath=filepath)
+    save_active_sites_as_json(collection, lookback=7, filepath=filepath)
 
 
 if __name__ == "__main__":
