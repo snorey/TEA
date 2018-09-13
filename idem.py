@@ -1320,36 +1320,48 @@ def get_docs_since(facility, reference_date):
 
 
 def build_popup(facility, reference_date=None):
+    if reference_date is None:
+        reference_date = get_reference_date()
     url = facility.ecm_url
     name = facility.vfc_name
     address = facility.full_address
     popup = ""
     linkline = '<a href="%s" target="blank">%s</a>' % (url, name)
     description = address
+    doclist = build_doc_list(facility, reference_date)
+    for line in [linkline, description, doclist]:
+        popup += "<p>%s</p>\n" % line
+    return popup
+
+
+def build_doc_list(facility, reference_date, cutoff=5):
     docs = get_docs_since(facility, reference_date)
     reference_date_us = reference_date.strftime("%B %d, %Y")
     doclist = "New docs added since %s:<ul>" % reference_date_us
     count = 0
     for doc in docs:
         count += 1
-        if count > 10:
+        if count > cutoff:
             break
-        pattern = '\n<li><a href="%s" target="blank">%s</a> (%s), %s</li>'
-        url = doc.url
-        date = doc.file_date.strftime("%B %d, %Y")
-        parenthetical = doc.program + "-" + doc.type
-        if doc.size is None:
-            doc.size = 0
-        size = convert_size(doc.size)
-        docstring = pattern % (url, date, parenthetical, size)
+        docstring = build_doc_list_item(doc)
         doclist += docstring
     doclist += "\n</ul>"
-    if count > 10:
-        extra_count = len(docs) - 10
-        doclist += '<br/><a href="%s" target="blank">and %d more</a>' % (url, extra_count)
-    for line in [linkline, description, doclist]:
-        popup += "<p>%s</p>\n" % line
-    return popup
+    if count > cutoff:
+        extra_count = len(docs) - cutoff
+        doclist += '<br/><a href="%s" target="blank">and %d more</a>' % (facility.ecm_url, extra_count)
+    return doclist
+
+
+def build_doc_list_item(doc):
+    pattern = '\n<li><a href="%s" target="blank">%s</a> (%s), %s</li>'
+    url = doc.url
+    date = doc.file_date.strftime("%B %d, %Y")
+    parenthetical = doc.program + "-" + doc.type
+    if doc.size is None:
+        doc.size = 0
+    size = convert_size(doc.size)
+    docstring = pattern % (url, date, parenthetical, size)
+    return docstring
 
 
 def facility_to_geojson(facility,
