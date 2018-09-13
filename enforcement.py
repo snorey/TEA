@@ -317,14 +317,22 @@ def get_enforcement_address(doc):
     return address
 
 
-def compose_popup(doc):
+def build_popup(doc):
     popup = ""
-    linkline = '<div class="popup-link"><a href="%s">%s</a></div>' % (doc.url, doc.doc_type)
+    if doc.doc_type:
+        doctype = doc.doc_type
+    else:
+        doctype = "Document"
+    if doctype == "NOV":
+        doctype = "Notice of Violation"
+    elif doctype == "AO":
+        doctype = "Agreed Order"
+    linkline = '<div class="popup-link"><a href="%s" target="blank">%s</a></div>' % (doc.url, doctype)
     popup += linkline + "\n"
     popup += "<p>%s</p>\n" % doc.date
     popup += "<p>%s</p>\n" % doc.facility.name
     popup += "<p>%s</p>\n" % doc.facility.street_address
-    return popup  # to do
+    return popup
 
 
 def doc_to_geojson(doc,
@@ -339,7 +347,7 @@ def doc_to_geojson(doc,
         "date": doc.date.isoformat(),
         "docType": doc.doc_type,
         "url": doc.url,
-        "popupContent": compose_popup(doc),
+        "popupContent": build_popup(doc),
         # "documentContent": doc.content,  # Unicode issues with serialization
     }
     # 2. obtain latlong if not present
@@ -549,8 +557,25 @@ class DirectoryCycler:
         files = [os.path.join(self.directory, x) for x in files]
         print len(files)
         self.docs = self.cycle_through_paths(files)
+        self.docs.sort(key=get_date_of_doc)
         return self.docs
+
+    def get_docs_since(self, lookback=30):
+        reference_date = self.date - datetime.timedelta(lookback)
+        filtered = []
+        for d in self.docs:
+            if d.date >= reference_date:
+                filtered.append(d)
+        filtered.sort(key=get_date_of_doc)
+        return filtered
+
+
+def get_date_of_doc(doc):
+    return doc.date
 
 
 def do_cron():
     daily_action()
+    cycler = DirectoryCycler()
+    docs = cycler.cycle_through_directory()
+    pull_vfc_geodata(docs)
