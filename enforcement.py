@@ -9,6 +9,7 @@ import idem_settings
 import tea_core
 
 enforcementdir = idem_settings.enforcementdir
+latest_json_path = os.path.join(idem_settings.websitedir, "latest_enforcement.json")
 
 # get enforcements from past 90 days
 # process enforcements into standardized data objects
@@ -577,5 +578,8 @@ def get_date_of_doc(doc):
 def do_cron():
     daily_action()
     cycler = DirectoryCycler()
-    docs = cycler.cycle_through_directory()
+    cycler.cycle_through_directory()
+    docs = cycler.get_docs_since()
     pull_vfc_geodata(docs)
+    write_usable_json(docs)
+    write_usable_json(docs, latest_json_path)
