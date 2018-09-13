@@ -397,7 +397,7 @@ def doc_to_geojson(permit,
         "manager": permit.pm,
         "program": permit.program,
         "url": permit.url,
-        "popupContent": "",
+        "popupContent": build_popup(permit),
         "start": permit.get_date_string("start_date"),
         "end": permit.get_date_string("end_date"),
     }
@@ -511,12 +511,36 @@ def write_usable_json(updater, path):
 
 
 def destring_latlong(str_latlong):
+    """
+    :param str_latlong: str
+    :return: tuple
+    """
     if ", " not in str_latlong:
         return str_latlong
     str_latlong = str_latlong.strip()[1:-1]  # trim parentheses
     pieces = str_latlong.split(", ")
     lat, lon = [float(x) for x in pieces]
     return lat, lon
+
+
+def build_popup(permit):
+    """
+    :param permit: Permit
+    :return: str
+    """
+    popup = ""
+    url = permit.url
+    name = permit.facility.name
+    address = permit.facility.full_address
+    linkline = '<a href="%s" target="blank">%s</a>' % (url, name)
+    description = address
+    if permit.comment_period:
+        period = permit.comment_period
+    else:
+        period = ""
+    for line in [linkline, description, period]:
+        popup += "<p>%s</p>\n" % line
+    return popup
 
 
 def do_cron():  # may need to split this into a morning and evening cron
