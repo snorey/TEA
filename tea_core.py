@@ -420,11 +420,11 @@ def get_county_poly(path="/home/sam/Downloads/Counties/tl_2013_18_cousub.shp",co
     return poly
 
 
-def get_daily_filepath(suffix, date=None, directory=idem_settings.maindir):
+def get_daily_filepath(suffix, date=None, directory=idem_settings.maindir, doctype = "permits"):
     if date is None:
         date = datetime.date.today()
     isodate = date.isoformat()
-    pattern = "permits_%s.%s"
-    filename = pattern % (isodate, suffix)
+    pattern = "%s_%s.%s"
+    filename = pattern % (doctype, isodate, suffix)
     filepath = os.path.join(directory, filename)
     return filepath
