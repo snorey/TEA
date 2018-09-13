@@ -246,9 +246,11 @@ def wp_login():
     return client
 
 
-def upload_post_text(text, publish=False, posttitle="", tags=list(), slug=""):
+def upload_post_text(text, publish=False, posttitle="", tags=None, slug=""):
     from wordpress_xmlrpc import WordPressPost
     from wordpress_xmlrpc.methods.posts import NewPost, EditPost
+    if tags is None:
+        tags = []
     post = WordPressPost()
     client = wp_login()
     print "Logged in..."
