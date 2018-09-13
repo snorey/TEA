@@ -134,7 +134,7 @@ class Document(object):
     content = ""
 
     def __init__(self, **arguments):
-        assign_values(self, arguments)
+        assign_values(self, arguments, tolerant=True)
 
     def __eq__(self, other):
         if type(other) == str:
@@ -172,7 +172,7 @@ class Document(object):
                 time.sleep(DEFAULT_WAIT)
 
     def to_tsv(self):
-        data = [self.crawl_date, self.filename, self.url]
+        data = [self.crawl_date.isoformat(), self.filename, self.url]
         tsv = "\t".join(data)
         return tsv
 
@@ -180,7 +180,7 @@ class Document(object):
         pass
 
 
-def assign_values(obj, arguments, tolerant=False):
+def assign_values(obj, arguments, tolerant=True):
     for key, value in arguments.items():
         if not tolerant:  # if accept unicode and string only
             if not isinstance(value, basestring):
@@ -308,12 +308,19 @@ def latlongify(facility):
     address = facility.full_address
     result = coord_from_address(address)
     if result is not False:
-        latitude, longitude, google_address = result
-        facility.full_address = google_address
-        lat = float(latitude)
-        lon = float(longitude)
-        facility.latlong = (lat, lon)
+        lat, lon = apply_data_to_facility(facility, result)
         return lat, lon
+
+
+def apply_data_to_facility(facility, data):
+    if not data:
+        return
+    latitude, longitude, google_address = data
+    facility.full_address = google_address
+    lat = float(latitude)
+    lon = float(longitude)
+    facility.latlong = (lat, lon)
+    return lat, lon
 
 
 def convert_point_to_latlong(coords):
@@ -412,3 +419,12 @@ def get_county_poly(path="/home/sam/Downloads/Counties/tl_2013_18_cousub.shp",co
     poly = Polygon(points)
     return poly
 
+
+def get_daily_filepath(suffix, date=None, directory=idem_settings.maindir):
+    if date is None:
+        date = datetime.date.today()
+    isodate = date.isoformat()
+    pattern = "permits_%s.%s"
+    filename = pattern % (isodate, suffix)
+    filepath = os.path.join(directory, filename)
+    return filepath
