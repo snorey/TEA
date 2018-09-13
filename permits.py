@@ -11,7 +11,7 @@ import urllib2
 
 permitdir = idem_settings.permitdir
 tsv_first_line = "name	URL	PM	number	county	dates	VFC	address	latlong"
-latest_json_path = os.path.join(permitdir, "latest_permits.json")
+latest_json_path = os.path.join(idem_settings.websitedir, "latest_permits.json")
 
 
 class Facility(tea_core.Facility):
@@ -53,7 +53,7 @@ class Permit(tea_core.Document):
             self.more = more
             self.pm = self.extract_info("Project Manager:")
             self.number = self.extract_info("Permit Number:")
-            # to do: get program
+            self.program = infer_program_from_url(url)
             if comment == "Yes":
                 self.comment_period = dates
                 self.convert_dates()
@@ -168,6 +168,17 @@ class Permit(tea_core.Document):
         self.facility.full_address = address
         if latlong:
             self.facility.latlong = destring_latlong(latlong)
+
+
+def infer_program_from_url(url):
+    if "npdes" in url:
+        return "Wastewater (NPDES)"
+    if "air" in url:
+        return "Air"
+    if "dw" in url:
+        return "Drinking water"
+    else:
+        return ""
 
 
 class PermitUpdater:
@@ -559,16 +570,19 @@ def build_popup(permit):
     url = permit.url
     name = permit.facility.name
     address = permit.facility.full_address
-    linkline = '<a href="%s" target="blank">%s</a>' % (url, name)
+    nameline = name
     if permit.program:
-        linkline += permit.program
+        nameline += " (%s)" % permit.program
     description = address
     if permit.comment_period:
         period = "Comment period: " + permit.comment_period
     else:
         period = ""
-    period += '&nbsp;(<a href="%s" target="blank">Read document</s>)' % url
-    for line in [linkline, description, period]:
+    anchor = "Read document"
+    if permit.doc_type:
+        anchor = permit.doc_type
+    docline = '<a href="%s" target="blank">%s</a>' % (url, anchor)
+    for line in [nameline, description, docline, period]:
         popup += "<p>%s</p>\n" % line
     return popup
 
@@ -584,6 +598,7 @@ def do_cron():  # may need to split this into a morning and evening cron
     updater.to_tsv(outpath)
     jsonpath = get_json_filepath()
     write_usable_json(updater, jsonpath)
+    write_usable_json(updater, latest_json_path)
 
 
 if __name__ == "__main__":
