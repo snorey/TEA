@@ -174,6 +174,7 @@ class PermitUpdater:
     main_url = "http://www.in.gov/idem/6395.htm"
     whether_download = True
     logtext = ""
+    county = "Lake"
 
     def __init__(self):
         self.date = datetime.date.today()
@@ -317,7 +318,9 @@ class PermitUpdater:
             open(filepath, "w").write(tsv)
             return filepath
 
-    def from_tsv(self, filepath):
+    def from_tsv(self, filepath=None):
+        if filepath is None:
+            filepath = get_tsv_filepath(self.date)
         tsv = open(filepath).read()
         permits = tsv_to_permits(tsv)
         existing_urls = set(self.urldic.keys())
@@ -338,6 +341,10 @@ class PermitUpdater:
         return permits
 
     def load_vfc(self):
+        """
+        Load available geographic data based on VFC ID assigned to facility associated with each permit.
+        :return: None
+        """
         vfcable = [x for x in self.current if x.facility.vfc_id]
         ids = [x.facility.vfc_id for x in vfcable]
         result = ids_to_facilities(ids)  # name, latlong, address
@@ -351,6 +358,10 @@ class PermitUpdater:
                 v.facility.full_address = address
 
     def latlongify(self):
+        """
+        Generate latlong for all permits
+        :return: None
+        """
         for permit in self.current:
             if permit.facility.latlong:
                 continue
@@ -358,9 +369,21 @@ class PermitUpdater:
                 permit.facility.latlongify()
 
     def to_json(self, county="Lake"):
+        """
+        :param county: str
+        :return: geojson object
+        """
         documents = self.current
         json = active_permits_to_geojson(documents, county)
         return json
+
+    def save_as_json(self):
+        """
+        :return: str
+        """
+        jsonpath = get_json_filepath(self.date)
+        write_usable_json(self, jsonpath)
+        return jsonpath
 
 
 def tsv_to_permits(tsv):
@@ -472,12 +495,7 @@ def ids_to_facilities(ids):
 
 
 def get_daily_filepath(suffix, date=None):
-    if date is None:
-        date = datetime.date.today()
-    isodate = date.isoformat()
-    pattern = "permits_%s.%s"
-    filename = pattern % (isodate, suffix)
-    filepath = os.path.join(permitdir, filename)
+    filepath = tea_core.get_daily_filepath(suffix, date, permitdir)
     return filepath
 
 
@@ -504,6 +522,12 @@ def get_latest_tsv():
 
 
 def write_usable_json(updater, path):
+    """
+    :param updater: PermitUpdater
+    :param path: filepath to be written to
+    :type path: str
+    :return: None
+    """
     json = updater.to_json()
     json_str = geojson.dumps(json)
     json_str = "var permits = " + json_str
@@ -512,7 +536,8 @@ def write_usable_json(updater, path):
 
 def destring_latlong(str_latlong):
     """
-    :param str_latlong: str
+    :param str_latlong: latlong tuple after coercion to string
+    :type str_latlong: str
     :return: tuple
     """
     if ", " not in str_latlong:
@@ -525,7 +550,8 @@ def destring_latlong(str_latlong):
 
 def build_popup(permit):
     """
-    :param permit: Permit
+    :param permit: the permit object for which a popup is needed
+    :type permit: Permit
     :return: str
     """
     popup = ""
