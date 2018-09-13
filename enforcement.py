@@ -51,49 +51,44 @@ class EnforcementQuerySession:
         return filepath
 
     def build_url(self):
-        today = self.today
-        delta = datetime.timedelta(self.days)
-        start = today - delta
-        startday = start.strftime("%d")
-        startmonth = start.strftime("%b")
-        startyear = start.strftime("%Y")
-        nowday = today.strftime("%d")
-        nowmonth = today.strftime("%b")
-        nowyear = today.strftime("%Y")
-        url = "http://www.in.gov/apps/idem/oe/idem_oe_order?"
-        url += "company_name=&case_number=&old_case_number=&county=" + self.county
-        url += "&media=All&type=0&start_month=" + startmonth + "&start_day=" + startday
-        url += "&start_year=" + startyear + "&end_month=" + nowmonth + "&end_day=" + nowday
-        url += "&end_year=" + nowyear + "&page=T&action=Search"
+        url = build_query_url(date=self.today, lookback=self.days, county=self.county)
         return url
 
     def row2obj(self, row):
         actionurl = ""
         basefilename = ""
-        doc_type = ""
-        city = row.split('<TD>&nbsp;<font size="-1">')[2].split("<")[0]
-        company = row.split('<font size="-1">', 1)[1].split("<")[0]
+        cells = row.split('<font size="-1">')
+        company = cells[1].split("<")[0]
+        program = cells[4].split("<")[0]
+        doc_type = cells[5].split("<")[0]
+        city = cells[6].split("<")[0]
         if "href" in row:
             actionurl = row.split('<a href="')[1].split('"')[0]
             basefilename = actionurl.split("/")[-1]
-            doc_type = actionurl.split("/")[-2]
         # define filename even for docs with no file, to avoid hashing problems
-        filename = "_".join([company, city, doc_type, basefilename])
+        filename = "_".join([company, city, doc_type, program, basefilename])
         path = os.path.join(self.directory, filename)
         doc = EnforcementDoc(url=actionurl,
                              crawl_date=self.today,
                              filename=filename,
                              path=path,
                              doc_type=doc_type,
+                             program=program,
                              city=city,
                              name=company)
         return doc
 
     def page2rows(self):
         rows = self.page.split("<TR>")[1:]
-        rows = [x for x in rows if '<TD ALIGN="CENTER"' in x]
-        self.rows = rows
-        return rows
+        cleaned_rows = []
+        for row in rows:
+            if '<TD ALIGN="CENTER"' not in row:
+                continue
+            if "</TR>" in row:
+                row = row.split("</TR>")[0]
+            cleaned_rows.append(row)
+        self.rows = cleaned_rows
+        return cleaned_rows
 
     def rows2objects(self):
         output = set()
@@ -186,8 +181,7 @@ class EnforcementQuerySession:
                     print "Bypassing, no URL"
                 continue
             filepath = os.path.join(self.directory, doc.filename)
-            if self.verbose:
-                print filepath
+            if self.verbose:                print filepath
             doc.retrieve_patiently(filepath)
 
     def fetch_all(self):
@@ -202,6 +196,25 @@ class EnforcementQuerySession:
         self.docs2sites()
         updates = self.get_updates()
         return updates
+
+
+def build_query_url(date=None, lookback=90, county="Lake"):
+    if date is None:
+        date = datetime.date.today()
+    delta = datetime.timedelta(lookback)
+    start = date - delta
+    startday = start.strftime("%d")
+    startmonth = start.strftime("%b")
+    startyear = start.strftime("%Y")
+    nowday = date.strftime("%d")
+    nowmonth = date.strftime("%b")
+    nowyear = date.strftime("%Y")
+    url = "http://www.in.gov/apps/idem/oe/idem_oe_order?"
+    url += "company_name=&case_number=&old_case_number=&county=" + county
+    url += "&media=All&type=0&start_month=" + startmonth + "&start_day=" + startday
+    url += "&start_year=" + startyear + "&end_month=" + nowmonth + "&end_day=" + nowday
+    url += "&end_year=" + nowyear + "&page=T&action=Search"
+    return url
 
 
 class EnforcementDoc(tea_core.Document):
@@ -328,11 +341,14 @@ def build_popup(doc):
         doctype = "Notice of Violation"
     elif doctype == "AO":
         doctype = "Agreed Order"
-    linkline = '<div class="popup-link"><a href="%s" target="blank">%s</a></div>' % (doc.url, doctype)
-    popup += linkline + "\n"
-    popup += "<p>%s</p>\n" % doc.date
-    popup += "<p>%s</p>\n" % doc.facility.name
-    popup += "<p>%s</p>\n" % doc.facility.street_address
+    if doc.url:
+        linkline = '<a href="%s" target="blank">%s</a>' % (doc.url, doctype)
+    else:
+        query_url = build_query_url()
+        linkline = '%s (not yet available) <a href="%s" target="blank">(check)</a>' % (doctype, query_url)
+    dateline = doc.date.strftime("%B %d, %Y")
+    for line in [doc.facility.name, dateline, linkline]:
+        popup += "<p>%s</p>\n" % line
     return popup
 
 
@@ -558,7 +574,6 @@ class DirectoryCycler:
         files = [os.path.join(self.directory, x) for x in files]
         print len(files)
         self.docs = self.cycle_through_paths(files)
-        self.docs.sort(key=get_date_of_doc)
         return self.docs
 
     def get_docs_since(self, lookback=30):
