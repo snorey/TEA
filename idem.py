@@ -466,6 +466,7 @@ class ZipUpdater:
         already = os.listdir(directory)
         already = set(filter(lambda x: x.endswith(".pdf"), already))
         self.current_facility.downloaded_filenames = already
+        return already
 
     def fetch_facility_docs(self):
         # self.get_downloaded_docs()
@@ -549,20 +550,8 @@ class ZipUpdater:
         return allfiles
 
     def fetch_files_for_facility(self):
-        allfiles = set()
-        files = self.current_facility.docs_from_page(self.current_facility.page)
-        filenamedic = dict(map(lambda x: (x.filename, x), files))
-        filenames = set(filenamedic.keys()) - self.current_facility.downloaded_filenames
-        filenames = sorted(list(filenames))
-        for filename in filenames:
-            doc = filenamedic[filename]
-            print doc.filename, len(allfiles), "%d/%d" % (1 + filenames.index(filename), len(filenames))
-            doc.path = os.path.join(self.current_facility.directory, filename)
-            if self.whether_download is True:
-                doc.retrieve_file_patiently()
-            allfiles.add(doc)
-            self.current_facility.downloaded_filenames.add(doc.filename)
-        return allfiles
+        newfiles = self.current_facility.download()
+        return newfiles
 
     def scan_zip_for_premature(self):
         sitedirs = filter(lambda x: os.path.isdir(os.path.join(self.directory, x)), os.listdir(self.directory))
@@ -693,6 +682,8 @@ class Facility:  # data structure
         all_ids = set()
         filenames.sort()  # put in chronological order
         for filename in filenames:
+            if not filename:
+                continue
             crawl_date_iso = re.search("\d\d\d\d-\d\d-\d\d", filename).group(0)
             filepath = os.path.join(self.directory, filename)
             page = open(filepath).read()
@@ -746,20 +737,28 @@ class Facility:  # data structure
         docs.sort()
         return docs
 
+    def build_filenamedic(self):
+        filenamedic = dict(map(lambda x: (x.filename, x), self.docs))
+        self.filenamedic = filenamedic
+
     def download(self, filenames=None):
         allfiles = set()
-        filenamedic = dict(map(lambda x: (x.filename, x), self.docs))
+        self.build_filenamedic()
         if filenames is None:
-            filenames = set(filenamedic.keys()) - self.downloaded_filenames
+            filenames = set(self.filenamedic.keys()) - self.downloaded_filenames
             filenames = sorted(list(filenames))
         for filename in filenames:
-            doc = filenamedic[filename]
-            print doc.filename, len(allfiles), "%d/%d" % (1 + filenames.index(filename), len(filenames))
-            doc.path = os.path.join(self.directory, filename)
-            doc.retrieve_file_patiently()
+            doc = self.download_filename(filename)
             allfiles.add(doc)
             self.downloaded_filenames.add(filename)
         return allfiles
+
+    def download_filename(self, filename):
+        doc = self.filenamedic[filename]
+        print doc.filename, "%d/%d" % (1 + filenames.index(filename), len(filenames))
+        doc.path = os.path.join(self.directory, filename)
+        doc.retrieve_file_patiently()
+        return doc
 
     def get_latest_page(self):
         def is_log_page(filename):
