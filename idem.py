@@ -35,84 +35,6 @@ latlong_filepath = os.path.join(idem_settings.maindir, "facilitydump.txt")
 latest_json_path = os.path.join(idem_settings.websitedir, "latest_vfc.json")
 
 
-def do_lake_zips(whether_download=True):
-    batch = ZipCollection(lakezips, firsttime=False, whether_download=whether_download)
-    batch.go(finish=True)
-    return batch
-
-
-class ZipCycler:
-
-    def __init__(self, zips=lakezips):
-        self.zips = zips
-        self.new = []
-        self.updated = []
-
-    def cycle(self, do_all=False):
-        for current_zip in self.zips:  # avoid holding multiple updaters in memory
-            updater = ZipUpdater(current_zip)
-            print current_zip, len(updater.facilities)
-            for facility in updater.facilities:
-                whether_update = False
-                if do_all:
-                    whether_update = True
-                elif facility.whether_to_update:
-                    whether_update = True
-                if whether_update:
-                    new_files = facility.check_for_new_docs()
-                    print facility.vfc_name, len(new_files)
-                    if new_files:
-                        self.new.append(new_files)
-                        self.updated.append(facility)
-        return self.new
-
-    def latlongify_updated(self, filepath=latlong_filepath):
-        iddic = dict([(x.vfc_id, x) for x in self.updated])
-        ids = set(iddic.keys())
-        for line in open(filepath):
-            data = process_location_line(line)
-            if data is None:
-                continue
-            else:
-                facility_id, name, latlong, address = data
-            if facility_id not in ids:
-                continue
-            facility = iddic[facility_id]
-            facility.latlong = latlong
-            facility.google_address = address
-
-
-def process_location_line(line):
-    idcol = 0
-    namecol = 1
-    latcol = 2
-    loncol = 3
-    addcol = 4
-    if not line.strip() or "\t" not in line:
-        return
-    pieces = line.split("\t")
-    facility_id = pieces[idcol]
-    latstring = pieces[latcol]
-    lonstring = pieces[loncol]
-    name = pieces[namecol]
-    address = pieces[addcol].strip()  # avoid trailing newline
-    if not latstring or not lonstring:
-        latlong = False
-    else:
-        lat = float(latstring)
-        lon = float(lonstring)
-        latlong = (lat, lon)
-    return facility_id, name, latlong, address
-
-
-def get_location_data(filepath=latlong_filepath):
-    data = []
-    for line in open(filepath):
-        linedata = process_location_line(line)
-        data.append(linedata)
-    return data
-
-
 class ZipCollection(list):
     html = ""
     update_all = False
@@ -156,34 +78,6 @@ class ZipCollection(list):
                     restart = False
             print "***%s***" % updater.zip
             updater.do_zip()
-        if finish is True:
-            self.show_html()
-
-    def show_html(self):
-        import webbrowser
-        self.to_html()
-        htmlname = "test_%s.html" % self.date.isoformat()
-        htmlpath = os.path.join(maindir, htmlname)
-        open(htmlpath, "w").write(self.html)
-        webbrowser.open(htmlpath)
-
-    def to_html(self):
-        htmlpattern = '''<h3>New VFC records</h3>
-        <table>
-        <tr style="background-color:#eeeeff">
-        <th colspan="3">New files found on %s</th>
-        </tr>'''
-        html = htmlpattern % self.date.strftime("%A %B %d, %Y")
-        html += '''<tr style="background-color:#eeeeff">
-        <th width="30%">Site</th>
-        <th width="30%">Date</th>
-        <th width="40%">Document</th>
-        </tr>\n'''
-        for updater in self:
-            html += updater.html
-        html += "</table>"
-        self.html = html
-        return html
 
     def find_by_name(self, searchterm):
         searchterm = searchterm.upper()
@@ -211,41 +105,36 @@ class ZipCollection(list):
     def dump_latlongs(self, filepath=latlong_filepath):
         output = ""
         for facility in self.facilities:
-            facility_id = facility.vfc_id
-            name = facility.vfc_name
-            address = facility.google_address
-            if type(facility.latlong) == tuple:
-                lat = str(facility.latlong[0])
-                lon = str(facility.latlong[1])
-            else:  # e.g. if False
-                lat = ""
-                lon = ""
-            line = "\t".join([facility_id, name, lat, lon, address])
+            line = self.generate_facility_line(facility)
             output += line + "\n"
         open(filepath, "w").write(output)
 
+    @staticmethod
+    def generate_facility_line(facility):
+        facility_id = facility.vfc_id
+        name = facility.vfc_name
+        address = facility.google_address
+        if type(facility.latlong) == tuple:
+            lat = str(facility.latlong[0])
+            lon = str(facility.latlong[1])
+        else:  # e.g. if False
+            lat = ""
+            lon = ""
+        line = "\t".join([facility_id, name, lat, lon, address])
+        return line
+
     def reload_latlongs(self, filepath=latlong_filepath):
-        idcol = 0
-        latcol = 2
-        loncol = 3
-        addcol = 4
         for line in open(filepath):
             if not line.strip() or "\t" not in line:
                 continue
-            pieces = line.split("\t")
-            facility_id = pieces[idcol]
-            latstring = pieces[latcol]
-            lonstring = pieces[loncol]
-            address = pieces[addcol].strip()  # avoid trailing newline
-            if not latstring or not lonstring:
-                latlong = False
-            else:
-                lat = float(latstring)
-                lon = float(lonstring)
-                latlong = (lat, lon)
-            facility = self.iddic[facility_id]
-            facility.latlong = latlong
-            facility.google_address = address
+            self.assign_geodata_from_line(line)
+
+    def assign_geodata_from_line(self, line):
+        facility_id, name, latlong, address = process_location_line(line)
+        facility = self.iddic[facility_id]
+        facility.latlong = latlong
+        facility.google_address = address
+        return facility
 
     def get_all_docs_in_range(self, start_date, end_date):
         docs_in_range = {}
@@ -278,6 +167,91 @@ class ZipCollection(list):
         for facility in self.facilities:
             if not facility.latlong:
                 facility.latlongify()
+
+    def catchup_downloads(self):
+        for facility in self.facilities:
+            facility.get_downloaded_docs()
+            if facility.due_for_download is True:
+                print facility.vfc_name, facility.vfc_id, facility.vfc_address, facility.zip
+                print len(facility.downloaded_filenames), len(facility.docs)
+                facility.download()
+
+
+class ZipCycler:
+
+    def __init__(self, zips=lakezips):
+        self.zips = zips
+        self.new = []
+        self.updated = []
+        self.iddic = {}
+        self.ids = set()
+
+    def cycle(self, do_all=False):
+        for current_zip in self.zips:  # avoid holding multiple updaters in memory
+            updater = ZipUpdater(current_zip)
+            print current_zip, len(updater.facilities)
+            for facility in updater.facilities:
+                if do_all or facility.whether_to_update:
+                    self.update_facility(facility)
+        return self.new
+
+    def update_facility(self, facility):
+        new_files = facility.check_for_new_docs()
+        print facility.vfc_name, len(new_files)
+        if new_files:
+            self.new.append(new_files)
+            self.updated.append(facility)
+
+    def latlongify_updated(self, filepath=latlong_filepath):
+        self.iddic = dict([(x.vfc_id, x) for x in self.updated])
+        self.ids = set(self.iddic.keys())
+        for line in open(filepath):
+            self.latlongify_facility_from_line(line)
+
+    def latlongify_facility_from_line(self, line):
+        data = process_location_line(line)
+        if data is None:
+            return
+        else:
+            self.assign_geodata(data)
+
+    def assign_geodata(self, data):
+        facility_id, name, latlong, address = data
+        if facility_id in self.ids:
+            facility = self.iddic[facility_id]
+            facility.latlong = latlong
+            facility.google_address = address
+
+
+def process_location_line(line):
+    idcol = 0
+    namecol = 1
+    latcol = 2
+    loncol = 3
+    addcol = 4
+    if not line.strip() or "\t" not in line:
+        return
+    pieces = line.split("\t")
+    facility_id = pieces[idcol]
+    latstring = pieces[latcol]
+    lonstring = pieces[loncol]
+    name = pieces[namecol]
+    address = pieces[addcol].strip()  # avoid trailing newline
+    if not latstring or not lonstring:
+        latlong = False
+    else:
+        lat = float(latstring)
+        lon = float(lonstring)
+        latlong = (lat, lon)
+    return facility_id, name, latlong, address
+
+
+def get_location_data(filepath=latlong_filepath):
+    data = []
+    for line in open(filepath):
+        linedata = process_location_line(line)
+        data.append(linedata)
+    return data
 
 
 class ZipUpdater:
@@ -334,26 +308,6 @@ class ZipUpdater:
         sitelist = self.facilities
         active_sites = get_sites_with_activity(sitelist, sincedate)
         return active_sites
-
-    def to_html(self):
-        active_sites = self.get_active_sites()
-        self.html = '<tr style="background-color:#eeeeff"><td colspan = "3">%s</td></tr>\n' % self.zip
-        for facility in active_sites:
-            self.html += self.build_facility_rows(facility)
-        return self.html
-
-    def build_facility_rows(self, facility):
-        html = ""
-        docs = sorted(list(facility.updated_docs))
-        rowspan = len(docs)
-        sitelink = '<a href="%s">%s</a>' % (facility.vfc_url, facility.vfc_name)
-        sitecell = '<td rowspan="%d">%s</td>\n' % (rowspan, sitelink)
-        index = 0
-        for doc in docs:
-            row = self.build_document_row(doc, index, sitecell)
-            index += 1
-            html += row
-        return html
 
     @staticmethod
     def build_document_row(doc, index, sitecell):
@@ -466,10 +420,7 @@ class ZipUpdater:
         return siteids
 
     def get_downloaded_docs(self):
-        directory = self.check_and_make_facility_directory()
-        already = os.listdir(directory)
-        already = set(filter(lambda x: x.endswith(".pdf"), already))
-        self.current_facility.downloaded_filenames = already
+        already = self.current_facility.get_downloaded_docs()
         return already
 
     def fetch_facility_docs(self):
@@ -660,6 +611,16 @@ class Facility:  # data structure
         docs = set(filter(lambda x: x.endswith(".pdf"), docs))
         self.downloaded_filenames = docs
         return docs
+
+    @property
+    def due_for_download(self):
+        if not self.docs:
+            return False
+        all_filenames = set([x.filename for x in self.docs])
+        if all_filenames - self.downloaded_filenames:
+            return True
+        else:
+            return False
 
     def set_directory(self, directory=None):
         if directory:
