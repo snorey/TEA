@@ -635,6 +635,8 @@ class Facility:  # data structure
         else:
             self.date = datetime.date.today()
         self.set_directory(directory=directory)
+        if arguments:
+            tea_core.assign_values(self, arguments, tolerant=True)
         self.downloaded_filenames = self.get_downloaded_docs()
         self.since_last_check = since_last_scan(self.directory)
         self.get_latest_page()
@@ -647,8 +649,6 @@ class Facility:  # data structure
             self.downloaded_filenames = self.get_downloaded_docs()
         self.docs = self.docs_from_directory()
         self.build_filenamedic()
-        if arguments:
-            tea_core.assign_values(self, arguments, tolerant=True)
 
     def get_downloaded_docs(self):
         if self.directory:
