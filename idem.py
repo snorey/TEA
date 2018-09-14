@@ -32,6 +32,7 @@ maindir = idem_settings.maindir
 permitdir = idem_settings.permitdir
 enforcementdir = idem_settings.enforcementdir
 latlong_filepath = os.path.join(idem_settings.maindir, "facilitydump.txt")
+latest_json_path = os.path.join(idem_settings.websitedir, "latest_vfc.json")
 
 
 def do_lake_zips(whether_download=True):
@@ -774,14 +775,33 @@ class Facility:  # data structure
         doc.retrieve_file_patiently()
         return doc
 
+    def is_log_page(self, filename):
+        """
+        Return True for a log page (no suffix), False otherwise.
+        :param filename: str
+        :return: bool
+        """
+        whether_log_page = False
+        if filename.startswith(self.vfc_id):
+            if "." not in filename:
+                whether_log_page = True
+        return whether_log_page
+
+    def get_all_filenames(self):
+        """
+        Provide an unfiltered set of all filenames in the facility directory.
+        :return: set
+        """
+        filenames = os.listdir(self.directory)
+        filenames = set(filenames)
+        return filenames
+
     def get_latest_page(self):
-        def is_log_page(filename):
-            whether_log_page = False
-            if filename.startswith(self.vfc_id):
-                if "." not in filename:
-                    whether_log_page = True
-            return whether_log_page
-        logpages = filter(is_log_page, self.get_downloaded_docs())
+        """
+        Provide content of latest downloaded log page in facility directory.
+        :return: str
+        """
+        logpages = filter(self.is_log_page, self.get_all_filenames())
         if not logpages:
             return ""
         logpages.sort()
@@ -792,6 +812,10 @@ class Facility:  # data structure
 
     @property
     def latest_file_date(self):
+        """
+        Return date object for the most recent file date of any file associated with the facility.
+        :return: datetime.date
+        """
         if not self.docs:
             return None
         else:
@@ -801,6 +825,10 @@ class Facility:  # data structure
 
     @property
     def latest_crawl_date(self):
+        """
+        Return date object for the most recent CRAWL date for any file associated with the facility.
+        :return: datetime.date
+        """
         if not self.docs:
             return None
         else:
@@ -1504,12 +1532,14 @@ def setup_collection(zips=lakezips):
     return collection
 
 
-def save_active_sites_as_json(collection, lookback=7, filepath=None):
+def save_active_sites_as_json(collection, lookback=7, filepath=None, also_save=True):
     refdate = get_reference_date(lookback)
     print "Reference date: ", refdate.isoformat()
     # fourth, write JSON to disk
     json_obj = active_sites_to_geojson(collection, refdate)
     result = write_usable_json(json_obj, filepath)
+    if also_save:
+        write_usable_json(json_obj, latest_json_path)
     return result
 
 
