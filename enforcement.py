@@ -303,7 +303,6 @@ def get_enforcement_address(doc):
         return False
     clean_page = get_clean_page(page)
     address_finder = "located (.+)"
-    city_finder = " in (.+?),"
     address_found = re.search(address_finder, clean_page)
     if not address_found:
         return False
@@ -313,7 +312,16 @@ def get_enforcement_address(doc):
     street_address = address_plus.split(",")[0].split(" in ")[0]
     street_address = repair_ordinals(street_address)
     street_address = street_address.strip()
+    city = find_city(doc, address_plus)
+    address_pieces = [street_address, city, "IN"]
+    address = ", ".join(address_pieces)
+    address = remove_linebreaks_and_whitespace(address)
+    return address
+
+
+def find_city(doc, address_plus):
     city = ""
+    city_finder = " in (.+?),"
     if doc.city:
         city = doc.city
     else:
@@ -326,10 +334,7 @@ def get_enforcement_address(doc):
             if city_found:
                 city = city_found.group(1)
     city = city.strip()
-    address_pieces = [street_address, city, "IN"]
-    address = ", ".join(address_pieces)
-    address = remove_linebreaks_and_whitespace(address)
-    return address
+    return city
 
 
 def build_popup(doc):
