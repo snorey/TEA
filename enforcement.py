@@ -483,11 +483,15 @@ def get_best_line_for_doc(doc, lines):
     elif len(matches) == 1:
         best_match = matches[0]
     else:
-        better_matches = [x for x in matches if x.startswith(doc.name)]
-        if better_matches:
-            best_match = better_matches[0]
-        else:
-            best_match = matches[0]
+        better_matches = []
+        for line in matches:
+            count = 0
+            for word in words:
+                if word in line:
+                    count += 1
+            better_matches.append((count, line))
+        better_matches.sort()
+        best_match = better_matches[-1][1]
     return best_match
 
 
@@ -523,7 +527,8 @@ class DirectoryCycler:
                  docs=None,
                  sessions=None,
                  addr_to_latlong=None,
-                 date=None):
+                 date=None,
+                 auto_latlong=False):
         if docs is None:
             docs = set()
         if sessions is None:
@@ -535,6 +540,7 @@ class DirectoryCycler:
         self.addr_to_latlong = addr_to_latlong  # for storing calls for addresses already looked up
         if self.addr_to_latlong is None:
             self.addr_to_latlong = {}
+        self.auto_latlong = auto_latlong
         self.date = date
         self.directory = enforcementdir
 
@@ -545,7 +551,7 @@ class DirectoryCycler:
         if not site.latlong:
             if addr in self.addr_to_latlong.keys():
                 site.latlong = self.addr_to_latlong[addr]
-            else:
+            elif self.auto_latlong:
                 tea_core.latlongify(site)
                 self.addr_to_latlong[addr] = site.latlong
 
