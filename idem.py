@@ -59,7 +59,6 @@ class ZipCollection(list):
         else:
             updater.whether_update_zip_info = (self.date.day % 7 == int(zipcode) % 7)  # to prevent bunching up
             updater.whether_download = zipcode in downloadzips
-#        tea_core.assign_values(updater, kwargs, tolerant=True)
         for facility in updater.facilities:
             self.add_facility(facility)
         self.append(updater)
@@ -69,7 +68,7 @@ class ZipCollection(list):
         self.iddic[facility.vfc_id] = facility
         self.namedic[facility.vfc_name].append(facility)
 
-    def go(self, finish=True, restart=False):
+    def go(self, restart=False):
         for updater in self:
             if restart:
                 if updater.zip != restart:
@@ -175,6 +174,7 @@ class ZipCollection(list):
                 print facility.vfc_name, facility.vfc_id, facility.vfc_address, facility.zip
                 print len(facility.downloaded_filenames), len(facility.docs)
                 facility.download()
+                time.sleep(tea_core.DEFAULT_SHORT_WAIT)
 
 
 class ZipCycler:
@@ -305,19 +305,6 @@ class ZipUpdater:
         sitelist = self.facilities
         active_sites = get_sites_with_activity(sitelist, sincedate)
         return active_sites
-
-    @staticmethod
-    def build_document_row(doc, index, sitecell):
-        datestring = doc.file_date.strftime("%B %d, %Y")
-        datecell = "<td>%s</td>\n" % datestring
-        filelink = '<a href="%s">%s</a>' % (doc.url, doc.id)
-        filetext = "%s (%s - %s)" % (filelink, doc.program, doc.type)
-        filecell = "<td>%s</td>\n" % filetext
-        if index == 0:
-            row = '<tr>%s\n%s\n%s</tr>\n' % (sitecell, datecell, filecell)
-        else:
-            row = '<tr>%s\n%s</tr>\n' % (datecell, filecell)
-        return row
 
     def retrieve_zip_page(self):
         zippage = get_page_patiently(self.zipurl, session=self.session)
