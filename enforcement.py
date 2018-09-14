@@ -181,7 +181,8 @@ class EnforcementQuerySession:
                     print "Bypassing, no URL"
                 continue
             filepath = os.path.join(self.directory, doc.filename)
-            if self.verbose:                print filepath
+            if self.verbose:
+                print filepath
             doc.retrieve_patiently(filepath)
 
     def fetch_all(self):
