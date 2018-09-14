@@ -1,4 +1,5 @@
 import datetime
+import ftplib
 import geojson  # pip install geojson
 import idem_settings
 import os
@@ -236,50 +237,41 @@ def retrieve_patiently(url, path):
     return path
 
 
-# wordpress
+# FTP
 
-def wp_login():
-    from wordpress_xmlrpc import Client
-    username = idem_settings.wp_user
-    password = idem_settings.wp_password
-    client = Client(idem_settings.wp_url, username, password)
-    return client
+class FTPsession:
 
+    def __init__(self):
+        user = idem_settings.ftp_user
+        password = idem_settings.ftp_password
+        server = idem_settings.ftp_server
+        self.ftp = ftplib.FTP(server, user, password)
 
-def upload_post_text(text, publish=False, posttitle="", tags=None, slug=""):
-    from wordpress_xmlrpc import WordPressPost
-    from wordpress_xmlrpc.methods.posts import NewPost, EditPost
-    if tags is None:
-        tags = []
-    post = WordPressPost()
-    client = wp_login()
-    print "Logged in..."
-    if not posttitle:
-        post.title = "Notifications for %s" % datetime.date.today().strftime("%B %d, %Y")
-    else:
-        post.title = posttitle
-    post.content = text
-    if tags:
-        tags = [x.lower().replace(" ", "-") for x in tags]
-        tags = [re.sub("[^\w\-]", "", x) for x in tags]
-        print str(tags)
-        post.terms_names['post_tag'] = tags
-    if not slug:
-        slug = posttitle.replace(",", "").replace(" ", "-").lower()
-    post.slug = slug
-    done = False
-    while not done:
-        try:
-            post.id = client.call(NewPost(post))
-        except Exception, e:  # debug tag issue
-            print str(e)
-            time.sleep(5)
+    def upload(self, path):
+        """
+        Upload file to FTP server.
+        @param path: The path to the file to upload
+        """
+        suffixes = [".txt", ".json", ".html", ".js", ".tsv"]
+        if path.split(".")[-1] in suffixes:
+            print "uploading as text:", path
+            with open(path) as handle:
+                self.ftp.storlines('STOR ' + path, handle)
         else:
-            done = True
-    if publish:
-        post.post_status = 'publish'
-        client.call(EditPost(post.id, post))
-    return post.id
+            print "uploading as binary:", path
+            with open(path, 'rb') as handle:
+                self.ftp.storbinary('STOR ' + path, handle, 1024)
+
+    def upload_website_files(self):
+        """
+        Iterate over website directory and sync all files to remote server.
+        :return: None
+        """
+        directory = idem_settings.websitedir
+        filenames = os.listdir(directory)
+        paths = [os.path.join(directory, x) for x in filenames]
+        for p in paths:
+            self.upload(p)
 
 
 def coord_from_address(address):
@@ -349,7 +341,9 @@ def is_feature_in_container(feature, container):
         return False
 
 
-def container_to_feature(container, props={"name":""}):
+def container_to_feature(container, props=None):
+    if props is None:
+        props = {"name": ""}
     points = mapping(container)["coordinates"][0]
     poly = geojson.Polygon(points)
     feature = geojson.Feature(geometry=poly, properties=props)
@@ -361,7 +355,7 @@ def get_name_and_container(shaperecord, longlat=True):
     utm_points = shaperecord.shape.points
     latlongs = convert_list_to_latlong(utm_points)
     if longlat:
-        latlongs = [(x[1],x[0]) for x in latlongs]
+        latlongs = [(x[1], x[0]) for x in latlongs]
     zip_container = Polygon(latlongs).buffer(0)
     return zip_name, zip_container
 
@@ -378,7 +372,7 @@ def get_zips(path='/home/sam/TEA/ZIP/ZCTA_TIGER05_IN.shp', target_zips=idem_sett
     return zips
 
 
-def filter_json_by_geography(json, shape): # assumes json is FeatureCollection of Features that are points
+def filter_json_by_geography(json, shape):  # assumes json is FeatureCollection of Features that are points
     if not isinstance(shape, Polygon):
         container = Polygon(shape.points)
     else:
@@ -412,7 +406,7 @@ def js_to_geojson(js):
     return json
 
 
-def get_county_poly(path="/home/sam/Downloads/Counties/tl_2013_18_cousub.shp",countycode=45):
+def get_county_poly(path="/home/sam/Downloads/Counties/tl_2013_18_cousub.shp", countycode=45):
     counties = shapefile.Reader(path).shapeRecords()
     county = [x for x in counties if x.record[-1] == int(countycode)][0]
     points = county.shape.points
@@ -420,7 +414,7 @@ def get_county_poly(path="/home/sam/Downloads/Counties/tl_2013_18_cousub.shp",co
     return poly
 
 
-def get_daily_filepath(suffix, date=None, directory=idem_settings.maindir, doctype = "permits"):
+def get_daily_filepath(suffix, date=None, directory=idem_settings.maindir, doctype="permits"):
     if date is None:
         date = datetime.date.today()
     isodate = date.isoformat()
