@@ -115,6 +115,7 @@ def get_location_data(filepath=latlong_filepath):
 class ZipCollection(list):
     html = ""
     update_all = False
+    worry_about_crawl_date = True
 
     def __init__(self, zips=lakezips, offline=False, **kwargs):
         super(ZipCollection, self).__init__()
@@ -129,13 +130,13 @@ class ZipCollection(list):
             self.setup_updater(zipcode, kwargs)
 
     def setup_updater(self, zipcode, kwargs):
-        updater = ZipUpdater(zipcode)
+        updater = ZipUpdater(zipcode, **kwargs)
         if self.offline:
             updater.go_offline()
         else:
             updater.whether_update_zip_info = (self.date.day % 7 == int(zipcode) % 7)  # to prevent bunching up
             updater.whether_download = zipcode in downloadzips
-        tea_core.assign_values(updater, kwargs, tolerant=True)
+#        tea_core.assign_values(updater, kwargs, tolerant=True)
         for facility in updater.facilities:
             self.add_facility(facility)
         self.append(updater)
@@ -280,12 +281,13 @@ class ZipCollection(list):
 
 class ZipUpdater:
 
-    def __init__(self, zipcode):
+    def __init__(self, zipcode, **arguments):
         self.zip = zipcode
         self.html = ""
         self.whether_download = True
         self.whether_update_zip_info = True
         self.whether_update_facility_info = True
+        self.worry_about_crawl_date = True
         self.offline = False
         self.firsttime = True
         self.directory = os.path.join(maindir, zipcode)
@@ -295,6 +297,7 @@ class ZipUpdater:
             os.mkdir(self.directory)
         except OSError:  # directory exists
             pass
+        tea_core.assign_values(self, arguments, tolerant=True)
         self.page = get_latest_zip_page(self.zip, zipdir=self.directory)
         self.facilities = self.get_facilities_from_page(self.page)
         self.siteids = [(x.vfc_id, x) for x in self.facilities]
@@ -303,7 +306,6 @@ class ZipUpdater:
         self.current_facility = None
         self.updated_facilities = []
         self.logtext = ""
-        self.worry_about_crawl_date = True
 
     def go_offline(self):
         self.whether_download = False
@@ -470,10 +472,6 @@ class ZipUpdater:
         return already
 
     def fetch_facility_docs(self):
-        # self.get_downloaded_docs()
-        # self.current_facility.updated_docs = self.current_facility.get_updated_docs_in_directory()
-        # if self.current_facility.updated_docs:
-        #     print self.current_facility.vfc_name, len(self.current_facility.updated_docs)
         if self.whether_update_facility_info is True:
             page = self.retrieve_facility_page()
         else:
@@ -483,11 +481,7 @@ class ZipUpdater:
         return self.current_facility.updated_docs
 
     def retrieve_facility_page(self):
-        if self.firsttime is False and len(self.current_facility.downloaded_filenames) > 0:
-            resultcount = 20
-        else:
-            resultcount = 500
-        starturl = self.build_start_url(resultcount)
+        starturl = self.current_facility.ecm_url
         page = get_page_patiently(starturl, session=self.session)
         self.current_facility.page = page
         pagefilename = self.current_facility.vfc_id + "_" + self.date.isoformat()
@@ -619,6 +613,7 @@ class Facility:  # data structure
     resultcount = 20
     worry_about_crawl_date = True
     filenamedic = None
+    doc_ids = set()
 
     def __init__(self, row=None, parent=None, directory=None, date=None, vfc_id=None, retrieve=False, **arguments):
         self.updated_docs = set()
@@ -660,6 +655,9 @@ class Facility:  # data structure
             docs = set(os.listdir(self.directory))
         else:
             docs = set()
+            return docs
+        docs = set(filter(lambda x: x.endswith(".pdf"), docs))
+        self.downloaded_filenames = docs
         return docs
 
     def set_directory(self, directory=None):
@@ -693,24 +691,26 @@ class Facility:  # data structure
 
     def docs_from_pages(self, filenames):
         all_docs = []
-        all_ids = set()
         filenames.sort()  # put in chronological order
         for filename in filenames:
             if not filename:
                 continue
-            crawl_date_iso = re.search("\d\d\d\d-\d\d-\d\d", filename).group(0)
-            filepath = os.path.join(self.directory, filename)
-            page = open(filepath).read()
-            crawl_date = date_from_iso(crawl_date_iso)
-            page_docs = self.docs_from_page(page, crawl_date=crawl_date, skip_ids=all_ids)
+            page_docs = self.filename_to_docs(filename)
             for doc in page_docs:
-                docid = doc.id
-                if docid in all_ids:  # already crawled on previous date
+                if doc.id in self.doc_ids:  # already crawled on previous date
                     continue
                 else:
-                    all_ids.add(docid)
+                    self.doc_ids.add(doc.id)
                     all_docs.append(doc)
         return all_docs
+
+    def filename_to_docs(self, filename):
+        crawl_date_iso = re.search("\d\d\d\d-\d\d-\d\d", filename).group(0)
+        filepath = os.path.join(self.directory, filename)
+        page = open(filepath).read()
+        crawl_date = date_from_iso(crawl_date_iso)
+        page_docs = self.docs_from_page(page, crawl_date=crawl_date, skip_ids=self.doc_ids)
+        return page_docs
 
     @staticmethod
     def get_info_from_old_style_rows(page):
