@@ -252,15 +252,19 @@ class FTPsession:
         Upload file to FTP server.
         @param path: The path to the file to upload
         """
-        suffixes = [".txt", ".json", ".html", ".js", ".tsv"]
-        if path.split(".")[-1] in suffixes:
+        suffixes = ["txt", "json", "html", "js", "tsv"]
+        filename = os.path.split(path)[-1]
+        suffix = filename.split(".")[-1]
+        if suffix in suffixes:
             print "uploading as text:", path
             with open(path) as handle:
-                self.ftp.storlines('STOR ' + path, handle)
+                command = "STOR %s %s " % (path, filename)
+                self.ftp.storlines(command, handle)
         else:
             print "uploading as binary:", path
-            with open(path, 'rb') as handle:
-                self.ftp.storbinary('STOR ' + path, handle, 1024)
+            with open(path, "rb") as handle:
+                command = "STOR %s %s " % (path, filename)
+                self.ftp.storbinary(command, handle, 1024)
 
     def upload_website_files(self):
         """
