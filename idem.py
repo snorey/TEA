@@ -323,24 +323,26 @@ class ZipUpdater:
         return row
 
     def retrieve_zip_page(self):
-        try:
-            zippage = get_page_patiently(self.zipurl, session=self.session)
-        except urllib2.URLError:
-            return False
+        zippage = get_page_patiently(self.zipurl, session=self.session)
         matchme = "Displaying Facilities 1 - (\d+) of (\d+)"
         matched = re.search(matchme, zippage)
         if matched:
-            thispage, totalcount = matched.group(1), matched.group(2)
-            print self.zip, thispage, totalcount
-            if int(thispage) < int(totalcount):
-                print "fetching page 2..."  # nothing currently gets close to page 3
-                nexturl = self.zipurl + "&PageNumber=2"
-                nextpage = get_page_patiently(nexturl, session=self.session)
+            thispagecount, totalcount = matched.group(1), matched.group(2)
+            print self.zip, thispagecount, totalcount
+            if int(thispagecount) < int(totalcount):
+                nextpage = self.retrieve_second_page()
                 zippage += nextpage
-        zippagepath = os.path.join(self.directory, str(self.zip) + "_" + self.date.isoformat() + ".html")
+        zipfilename = str(self.zip) + "_" + self.date.isoformat() + ".html"
+        zippagepath = os.path.join(self.directory, zipfilename)
         open(zippagepath, "w").write(zippage)
         self.page = zippage
         return zippage
+
+    def retrieve_second_page(self):
+        print "fetching page 2..."  # nothing currently gets close to page 3
+        nexturl = self.zipurl + "&PageNumber=2"
+        nextpage = get_page_patiently(nexturl, session=self.session)
+        return nextpage
 
     def refresh_siteids(self):
         siteids = sorted(self.sites_by_siteid.keys())
@@ -357,17 +359,15 @@ class ZipUpdater:
     def handle_facility(self, site_id):
         facility = self.sites_by_siteid[site_id]
         self.current_facility = facility
-        if not self.whether_update_facility(facility):
-            return
-        self.show_progress(site_id)
-        self.fetch_facility_docs()
-        time.sleep(tea_core.DEFAULT_SHORT_WAIT)
-        if not facility.updated_docs:
-            return
-        print len(facility.updated_docs)
-        self.updated_facilities.append(facility)
-        if self.whether_download is True:
-            time.sleep(tea_core.DEFAULT_WAIT)
+        if self.whether_update_facility(facility):
+            self.show_progress(site_id)
+            self.fetch_facility_docs()
+            time.sleep(tea_core.DEFAULT_SHORT_WAIT)
+            if facility.updated_docs:
+                print len(facility.updated_docs)
+                self.updated_facilities.append(facility)
+                if self.whether_download is True:
+                    time.sleep(tea_core.DEFAULT_WAIT)
 
     def show_progress(self, site_id):
         progress = "%d/%d" % (self.siteids.index(site_id) + 1, len(self.siteids))
