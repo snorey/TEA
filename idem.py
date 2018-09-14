@@ -119,7 +119,8 @@ class ZipCollection(list):
         name = facility.vfc_name
         address = facility.google_address
         lat, lon = self.stringify_latlong(facility.latlong)
-        line = "\t".join([facility_id, name, lat, lon, address])
+        data = [facility_id, name, lat, lon, address]
+        line = "\t".join(data)
         return line
 
     @staticmethod
@@ -184,11 +185,15 @@ class ZipCollection(list):
 
     def catchup_downloads(self):
         for facility in self.facilities:
-            facility.get_downloaded_docs()
-            if facility.due_for_download is True:
-                print facility.name, facility.directory, facility.full_address
-                facility.download()
-                time.sleep(tea_core.DEFAULT_SHORT_WAIT)
+            self.catchup_facility(facility)
+
+    @staticmethod
+    def catchup_facility(facility):
+        facility.get_downloaded_docs()
+        if facility.due_for_download is True:
+            print facility.vfc_name, facility.directory, facility.full_address
+            facility.download()
+            time.sleep(tea_core.DEFAULT_SHORT_WAIT)
 
 
 class ZipCycler:
