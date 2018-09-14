@@ -39,6 +39,7 @@ class ZipCollection(list):
     html = ""
     update_all = False
     worry_about_crawl_date = True
+    restart = False
 
     def __init__(self, zips=lakezips, offline=False, **kwargs):
         super(ZipCollection, self).__init__()
@@ -69,14 +70,19 @@ class ZipCollection(list):
         self.namedic[facility.vfc_name].append(facility)
 
     def go(self, restart=False):
+        if restart:
+            self.restart = restart
         for updater in self:
-            if restart:
-                if updater.zip != restart:
-                    continue
-                else:
-                    restart = False
-            print "***%s***" % updater.zip
-            updater.do_zip()
+            self.run_updater(updater)
+
+    def run_updater(self, updater):
+        if self.restart:
+            if updater.zip == self.restart:
+                self.restart = False
+            else:
+                return
+        print "***%s***" % updater.zip
+        updater.do_zip()
 
     def find_by_name(self, searchterm):
         searchterm = searchterm.upper()
@@ -108,19 +114,28 @@ class ZipCollection(list):
             output += line + "\n"
         open(filepath, "w").write(output)
 
-    @staticmethod
-    def generate_facility_line(facility):
+    def generate_facility_line(self, facility):
         facility_id = facility.vfc_id
         name = facility.vfc_name
         address = facility.google_address
-        if type(facility.latlong) == tuple:
-            lat = str(facility.latlong[0])
-            lon = str(facility.latlong[1])
+        lat, lon = self.stringify_latlong(facility.latlong)
+        line = "\t".join([facility_id, name, lat, lon, address])
+        return line
+
+    @staticmethod
+    def stringify_latlong(latlong):
+        """
+        Take latlong (tuple or False) and return as pair of strings
+        :param latlong: tuple
+        :return: str
+        """
+        if type(latlong) == tuple:
+            lat = str(latlong[0])
+            lon = str(latlong[1])
         else:  # e.g. if False
             lat = ""
             lon = ""
-        line = "\t".join([facility_id, name, lat, lon, address])
-        return line
+        return lat, lon
 
     def reload_latlongs(self, filepath=latlong_filepath):
         for line in open(filepath):
@@ -144,14 +159,14 @@ class ZipCollection(list):
         return docs_in_range
 
     def get_active_facilities(self, lookback_days=7):
-        active_facilities = []
         cutoff_date = get_reference_date(lookback_days)
+        active_facilities = self.get_active_since(cutoff_date)
+        return active_facilities
+
+    def get_active_since(self, cutoff_date):
+        active_facilities = []
         for facility in self.facilities:
-            if not facility.docs:
-                continue
-            if facility.latest_file_date >= cutoff_date:
-                active_facilities.append(facility)
-            elif facility.latest_crawl_date >= cutoff_date:
+            if facility.is_active_since(cutoff_date):
                 active_facilities.append(facility)
         return active_facilities
 
@@ -171,8 +186,7 @@ class ZipCollection(list):
         for facility in self.facilities:
             facility.get_downloaded_docs()
             if facility.due_for_download is True:
-                print facility.vfc_name, facility.vfc_id, facility.vfc_address, facility.zip
-                print len(facility.downloaded_filenames), len(facility.docs)
+                print facility.name, facility.directory, facility.full_address
                 facility.download()
                 time.sleep(tea_core.DEFAULT_SHORT_WAIT)
 
@@ -237,12 +251,7 @@ def process_location_line(line):
     lonstring = pieces[loncol]
     name = pieces[namecol]
     address = pieces[addcol].strip()  # avoid trailing newline
-    if not latstring or not lonstring:
-        latlong = False
-    else:
-        lat = float(latstring)
-        lon = float(lonstring)
-        latlong = (lat, lon)
+    latlong = destring_latlong(latstring, lonstring)
     return facility_id, name, latlong, address
 
 
@@ -252,6 +261,16 @@ def get_location_data(filepath=latlong_filepath):
         linedata = process_location_line(line)
         data.append(linedata)
     return data
+
+
+def destring_latlong(latstring, lonstring):
+    if not latstring or not lonstring:
+        latlong = False
+    else:
+        lat = float(latstring)
+        lon = float(lonstring)
+        latlong = (lat, lon)
+    return latlong
 
 
 class ZipUpdater:
@@ -308,14 +327,23 @@ class ZipUpdater:
 
     def retrieve_zip_page(self):
         zippage = get_page_patiently(self.zipurl, session=self.session)
+        if self.need_to_get_second_page(zippage):
+            nextpage = self.retrieve_second_page()
+            zippage += nextpage
+        self.save_zip_page(zippage)
+        return zippage
+
+    @staticmethod
+    def need_to_get_second_page(zippage):
         matchme = "Displaying Facilities 1 - (\d+) of (\d+)"
         matched = re.search(matchme, zippage)
         if matched:
             thispagecount, totalcount = matched.group(1), matched.group(2)
-            print self.zip, thispagecount, totalcount
             if int(thispagecount) < int(totalcount):
-                nextpage = self.retrieve_second_page()
-                zippage += nextpage
+                return True
+        return False
+
+    def save_zip_page(self, zippage):
         zipfilename = str(self.zip) + "_" + self.date.isoformat() + ".html"
         zippagepath = os.path.join(self.directory, zipfilename)
         open(zippagepath, "w").write(zippage)
@@ -344,14 +372,17 @@ class ZipUpdater:
         facility = self.sites_by_siteid[site_id]
         self.current_facility = facility
         if self.whether_update_facility(facility):
-            self.show_progress(site_id)
-            self.fetch_facility_docs()
-            time.sleep(tea_core.DEFAULT_SHORT_WAIT)
-            if facility.updated_docs:
-                print len(facility.updated_docs)
-                self.updated_facilities.append(facility)
-                if self.whether_download is True:
-                    time.sleep(tea_core.DEFAULT_WAIT)
+            self.update_facility(facility)
+
+    def update_facility(self, facility):
+        self.show_progress(facility.vfc_id)
+        self.fetch_facility_docs()
+        time.sleep(tea_core.DEFAULT_SHORT_WAIT)
+        if facility.updated_docs:
+            print len(facility.updated_docs)
+            self.updated_facilities.append(facility)
+            if self.whether_download is True:
+                time.sleep(tea_core.DEFAULT_WAIT)
 
     def show_progress(self, site_id):
         progress = "%d/%d" % (self.siteids.index(site_id) + 1, len(self.siteids))
@@ -362,14 +393,21 @@ class ZipUpdater:
         sincecheck = since_last_scan(facility.directory)
         sincenewfile = since_last_file(facility.directory, download=self.whether_download)
         if self.firsttime is False and self.whether_update_facility_info is True:  # if no updating no need to skimp
-            if sincecheck < 1:
-                should_update = False
-            elif sincenewfile > 60 and sincecheck < 3:  # somewhat arbitrary numbers here
-                should_update = False
-            elif sincenewfile > 365 and sincecheck < 10:
-                should_update = False
-            elif sincenewfile > 1500 and sincecheck < 30:
-                should_update = False
+            should_update = self.whether_updatable_by_dates(sincecheck, sincenewfile)
+        return should_update
+
+    @staticmethod
+    def whether_updatable_by_dates(sincecheck, sincenewfile):
+        if sincecheck < 1:
+            should_update = False
+        elif sincenewfile > 60 and sincecheck < 3:  # somewhat arbitrary numbers here
+            should_update = False
+        elif sincenewfile > 365 and sincecheck < 10:
+            should_update = False
+        elif sincenewfile > 1500 and sincecheck < 30:
+            should_update = False
+        else:
+            should_update = True
         return should_update
 
     def log_updates_ecm(self):
@@ -413,7 +451,7 @@ class ZipUpdater:
         else:
             page = self.current_facility.get_latest_page()
         self.current_facility.page = page
-        self.current_facility.updated_docs |= self.fetch_files_for_facility()
+        self.current_facility.updated_docs |= self.fetch_files_for_current_facility()
         return self.current_facility.updated_docs
 
     def retrieve_facility_page(self):
@@ -474,17 +512,21 @@ class ZipUpdater:
         types = map(lambda x: x.replace(" ", "%20"), rawtypes)
         print str(types)
         for t in types:
-            print "***%s***" % t
-            url = generate_type_url(self.current_facility.vfc_id, t)
-            page = get_page_patiently(url, session=self.session)
-            self.current_facility.page += page
-            morefiles = self.fetch_files_for_facility()
+            morefiles = self.fetch_type_files(t)
             allfiles |= morefiles
             print len(morefiles), len(allfiles)
-            time.sleep(5)
+            time.sleep(tea_core.DEFAULT_WAIT)
         return allfiles
 
-    def fetch_files_for_facility(self):
+    def fetch_type_files(self, filetype):
+        print "***%s***" % filetype
+        url = generate_type_url(self.current_facility.vfc_id, filetype)
+        page = get_page_patiently(url, session=self.session)
+        self.current_facility.page += page
+        morefiles = self.fetch_files_for_current_facility()
+        return morefiles
+
+    def fetch_files_for_current_facility(self):
         newfiles = self.current_facility.download()
         return newfiles
 
@@ -502,8 +544,23 @@ class ZipUpdater:
                 if total > 500:
                     self.fetch_all_files_for_facility()
                 else:
-                    self.fetch_files_for_facility()
+                    self.fetch_files_for_current_facility()
         return True
+
+    def scan_site_for_premature(self, siteid):
+        if siteid not in self.sites_by_siteid.keys():
+            print "%s not in keys!" % siteid
+            return
+        self.current_facility = self.sites_by_siteid[siteid]
+        sitedir = os.path.join(self.directory, siteid)
+        whether_premature = scan_for_premature_stops(sitedir)
+        if whether_premature:
+            self.get_downloaded_docs()
+            total = get_latest_total(sitedir)
+            if total > 500:
+                self.fetch_all_files_for_facility()
+            else:
+                self.fetch_files_for_current_facility()
 
     def get_facility_from_row(self, row):
         facility = Facility(row=row, parent=self, worry_about_crawl_date=self.worry_about_crawl_date)
@@ -549,13 +606,13 @@ class Facility:  # data structure
     resultcount = 20
     worry_about_crawl_date = True
     filenamedic = None
-    doc_ids = set()
 
     def __init__(self, row=None, parent=None, directory=None, date=None, vfc_id=None, retrieve=False, **arguments):
         self.updated_docs = set()
         self.downloaded_filenames = set()
         self.session = requests.Session()
         self.docs = []
+        self.doc_ids = set()
         if vfc_id is not False:
             self.vfc_id = vfc_id
         if row:  # overrides vfc_id if set
@@ -602,6 +659,16 @@ class Facility:  # data structure
             return False
         all_filenames = set([x.filename for x in self.docs])
         if all_filenames - self.downloaded_filenames:
+            return True
+        else:
+            return False
+
+    def is_active_since(self, cutoff_date):
+        if not self.docs:
+            return False
+        if self.latest_file_date >= cutoff_date:
+            return True
+        elif self.latest_crawl_date >= cutoff_date:
             return True
         else:
             return False
@@ -1477,10 +1544,19 @@ def setup_collection(zips=lakezips):
     return collection
 
 
+def get_json_filepath(date=None):
+    if date is None:
+        date = datetime.date.today()
+    filename = "idem_%s.json" % date.isoformat()
+    filepath = os.path.join(idem_settings.maindir, filename)
+    return filepath
+
+
 def save_active_sites_as_json(collection, lookback=7, filepath=None, also_save=True):
     refdate = get_reference_date(lookback)
     print "Reference date: ", refdate.isoformat()
-    # fourth, write JSON to disk
+    if filepath is None:
+        filepath = get_json_filepath()
     json_obj = active_sites_to_geojson(collection, refdate)
     result = write_usable_json(json_obj, filepath)
     if also_save:
@@ -1493,11 +1569,12 @@ def do_cron():
     do_cycle()
     # second, compile local info
     collection = setup_collection()
-    # third, generate JSON
+    # third, generate and save JSON
     today = datetime.date.today()
     filename = "idem_%s.json" % today.isoformat()
     filepath = os.path.join(idem_settings.maindir, filename)
     save_active_sites_as_json(collection, lookback=7, filepath=filepath)
+    return collection
 
 
 if __name__ == "__main__":
