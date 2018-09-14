@@ -338,10 +338,6 @@ def build_popup(doc):
         doctype = doc.doc_type
     else:
         doctype = "Document"
-    if doctype == "NOV":
-        doctype = "Notice of Violation"
-    elif doctype == "AO":
-        doctype = "Agreed Order"
     if doc.url:
         linkline = '<a href="%s" target="blank">%s</a>' % (doc.url, doctype)
     else:
@@ -353,12 +349,7 @@ def build_popup(doc):
     return popup
 
 
-def doc_to_geojson(doc,
-                   attempt_latlong=True,
-                   for_leaflet=True):
-    facility = doc.facility
-    # convert doc to geojson Feature:
-    # 1. put properties into dict
+def build_doc_properties(doc):
     props = {
         "name": doc.facility.name,
         "address": doc.facility.full_address,
@@ -366,32 +357,47 @@ def doc_to_geojson(doc,
         "docType": doc.doc_type,
         "url": doc.url,
         "popupContent": build_popup(doc),
-        # "documentContent": doc.content,  # Unicode issues with serialization
     }
-    # 2. obtain latlong if not present
-    if attempt_latlong and not facility.latlong:
-        facility.latlongify()
+    return props
+
+
+def doc_to_geojson(doc,
+                   attempt_latlong=True,
+                   for_leaflet=True):
+    facility = doc.facility
+    props = build_doc_properties(doc)
+    coords = get_facility_coords(facility, attempt_latlong=attempt_latlong, for_leaflet=for_leaflet)
+    if coords is not None:
+        point = geojson.Point(coords)
+        feature = geojson.Feature(geometry=point, properties=props)
+        return feature
+
+
+def get_facility_coords(facility, attempt_latlong=True, for_leaflet=True):
+    """
+    Return facility latlong if available, otherwise return None.
+    :param facility: Facility
+    :param attempt_latlong: bool
+    :param for_leaflet: bool
+    :return: None or tuple
+    """
     if not facility.latlong:
-        return False
+        if attempt_latlong:
+            facility.latlongify()
+    if not facility.latlong:
+        return
     coords = facility.latlong
     if for_leaflet:  # LeafletJS uses reverse of GeoJSON order
         coords = tuple(reversed(coords))
-    # 3. compose as Point with properties
-    point = geojson.Point(coords)
-    feature = geojson.Feature(geometry=point, properties=props)
-    return feature
+    return coords
 
 
 def actions_to_geojson(docs, attempt_latlong=True):
     feature_list = []
     for doc in docs:
-        # doc to geojson Feature
         feature = doc_to_geojson(doc, attempt_latlong=attempt_latlong)
-        if feature is False:
-            continue
-        # put into list form for subsequent conversion
-        feature_list.append(feature)
-    # combine into geojson FeatureCollection
+        if feature is not None:
+            feature_list.append(feature)
     collection = geojson.FeatureCollection(feature_list)
     json = geojson.dumps(collection)
     return json
