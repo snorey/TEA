@@ -292,9 +292,6 @@ class ZipUpdater:
         if self.whether_update_zip_info is True:
             self.update_info()
         self.get_updated_facilities()
-        self.html += '<tr style="background-color:#eeeeff"><td colspan = "3">%s</td></tr>' % self.zip
-        for facility in self.updated_facilities:
-            self.html += self.build_facility_rows(facility)
         self.log_updates_ecm()
 
     def update_info(self):
