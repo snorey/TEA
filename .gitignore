@@ -1,4 +1,5 @@
 idem_settings.py
+test*
 *.pyc
-.idea/
+.idea/*
 venv/*

@@ -4,14 +4,10 @@
     <option name="SCOPE_TYPE" value="3" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="e67bf09b-fb23-4041-86c8-dbcd35fe9b29" name="Default" comment="interoperability updates">
-      <change beforePath="$PROJECT_DIR$/.idea/.name" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/legacy.iml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/modules.xml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" />
+    <list default="true" id="e67bf09b-fb23-4041-86c8-dbcd35fe9b29" name="Default" comment="PEP8 compliance">
+      <change afterPath="$PROJECT_DIR$/test_idem.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/idem.py" beforeDir="false" afterPath="$PROJECT_DIR$/idem.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/enforcement.py" beforeDir="false" afterPath="$PROJECT_DIR$/enforcement.py" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
@@ -23,10 +19,11 @@
     <session id="-390649135">
       <usages-collector id="statistics.lifecycle.project">
         <counts>
-          <entry key="project.closed" value="2" />
+          <entry key="project.closed" value="3" />
           <entry key="project.open.time.11" value="1" />
           <entry key="project.open.time.13" value="2" />
           <entry key="project.open.time.18" value="2" />
+          <entry key="project.open.time.19" value="1" />
           <entry key="project.open.time.20" value="1" />
           <entry key="project.open.time.22" value="1" />
           <entry key="project.open.time.24" value="1" />
@@ -35,69 +32,96 @@
           <entry key="project.open.time.32" value="1" />
           <entry key="project.open.time.33" value="1" />
           <entry key="project.open.time.4" value="1" />
-          <entry key="project.opened" value="13" />
+          <entry key="project.opened" value="14" />
         </counts>
       </usages-collector>
       <usages-collector id="statistics.file.types.edit">
         <counts>
-          <entry key="PLAIN_TEXT" value="929" />
-          <entry key="Python" value="25545" />
+          <entry key="PLAIN_TEXT" value="1208" />
+          <entry key="Python" value="30158" />
         </counts>
       </usages-collector>
       <usages-collector id="statistics.file.types.open">
         <counts>
           <entry key="HTML" value="1" />
-          <entry key="Python" value="11" />
+          <entry key="Python" value="12" />
         </counts>
       </usages-collector>
       <usages-collector id="statistics.file.extensions.edit">
         <counts>
           <entry key="dummy" value="27" />
-          <entry key="py" value="25545" />
-          <entry key="txt" value="902" />
+          <entry key="py" value="30158" />
+          <entry key="txt" value="1181" />
         </counts>
       </usages-collector>
       <usages-collector id="statistics.file.extensions.open">
         <counts>
           <entry key="html" value="1" />
-          <entry key="py" value="11" />
+          <entry key="py" value="12" />
         </counts>
       </usages-collector>
     </session>
   </component>
   <component name="FileEditorManager">
     <leaf SIDE_TABS_SIZE_LIMIT_KEY="300">
-      <file pinned="false" current-in-tab="true">
+      <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/idem.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="435">
-              <caret line="638" column="66" selection-start-line="638" selection-start-column="66" selection-end-line="638" selection-end-column="66" />
+            <state relative-caret-position="15">
+              <caret line="1415" column="26" lean-forward="true" selection-start-line="1415" selection-start-column="26" selection-end-line="1415" selection-end-column="26" />
               <folding>
                 <element signature="e#299#317#0" expanded="true" />
-                <marker date="1536884463908" expanded="true" signature="2502:3288" ph="..." />
-                <marker date="1536884463908" expanded="true" signature="17760:18207" ph="..." />
-                <marker date="1536884463908" expanded="true" signature="20629:20633" ph="..." />
-                <marker date="1536884463908" expanded="true" signature="25967:26312" ph="..." />
-                <marker date="1536884463908" expanded="true" signature="27937:28052" ph="..." />
-                <marker date="1536884463908" expanded="true" signature="47668:48234" ph="..." />
-                <marker date="1536884463908" expanded="true" signature="48263:48611" ph="..." />
+                <element signature="e#958#5991#0" />
+                <element signature="e#6064#7568#0" />
+                <element signature="e#7608#8163#0" />
+                <element signature="e#8220#8354#0" />
+                <element signature="e#8640#8818#0" />
+                <marker date="1536940124180" expanded="true" signature="2294:2511" ph="..." />
+                <marker date="1536940124180" expanded="true" signature="3656:4318" ph="..." />
+                <marker date="1536940124180" expanded="true" signature="3969:4318" ph="..." />
+                <marker date="1536940124180" expanded="true" signature="4580:4804" ph="..." />
+                <marker date="1536940124180" expanded="true" signature="5375:5591" ph="..." />
+                <marker date="1536940124180" expanded="false" signature="8524:8710" ph="..." />
+                <marker date="1536940124180" expanded="true" signature="10958:11268" ph="..." />
+                <marker date="1536940124180" expanded="true" signature="11301:11544" ph="..." />
+                <marker date="1536940124180" expanded="true" signature="11575:11799" ph="..." />
+                <marker date="1536940124180" expanded="true" signature="13579:14017" ph="..." />
+                <marker date="1536940124180" expanded="true" signature="16159:16606" ph="..." />
+                <marker date="1536940124180" expanded="true" signature="18751:19054" ph="..." />
+                <marker date="1536940124180" expanded="true" signature="19175:19179" ph="..." />
+                <marker date="1536940124180" expanded="true" signature="19993:20564" ph="..." />
+                <marker date="1536940124180" expanded="true" signature="23537:24056" ph="..." />
+                <marker date="1536940124180" expanded="true" signature="23811:24056" ph="..." />
+                <marker date="1536940124180" expanded="true" signature="25703:26048" ph="..." />
+                <marker date="1536940124180" expanded="true" signature="27673:27788" ph="..." />
+                <marker date="1536940124180" expanded="true" signature="28696:28697" ph="..." />
+                <marker date="1536940124180" expanded="true" signature="53181:53372" ph="..." />
               </folding>
             </state>
           </provider>
         </entry>
       </file>
       <file pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/enforcement.py">
+        <entry file="file://$PROJECT_DIR$/test_idem.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="198">
-              <caret line="474" column="33" selection-start-line="474" selection-start-column="25" selection-end-line="474" selection-end-column="33" />
+            <state relative-caret-position="105">
+              <caret line="7" column="21" selection-start-line="7" selection-start-column="21" selection-end-line="7" selection-end-column="21" />
               <folding>
                 <element signature="e#0#15#0" expanded="true" />
-                <marker date="1536869036554" expanded="true" signature="13010:13145" ph="..." />
-                <marker date="1536869036554" expanded="true" signature="15437:15713" ph="..." />
-                <marker date="1536869036554" expanded="true" signature="15778:16127" ph="..." />
-                <marker date="1536869036554" expanded="true" signature="18661:18684" ph="..." />
-                <marker date="1536869036554" expanded="true" signature="18698:18699" ph="..." />
+                <marker date="1536887815442" expanded="true" signature="135:198" ph="..." />
+              </folding>
+            </state>
+          </provider>
+        </entry>
+      </file>
+      <file pinned="false" current-in-tab="true">
+        <entry file="file://$PROJECT_DIR$/enforcement.py">
+          <provider selected="true" editor-type-id="text-editor">
+            <state relative-caret-position="177">
+              <caret line="540" column="8" selection-start-line="540" selection-start-column="8" selection-end-line="540" selection-end-column="8" />
+              <folding>
+                <element signature="e#0#15#0" expanded="true" />
+                <marker date="1536956741272" expanded="true" signature="15497:15499" ph="..." />
               </folding>
             </state>
           </provider>
@@ -106,11 +130,10 @@
       <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/tea_core.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="3">
-              <caret line="244" column="13" selection-start-line="244" selection-start-column="13" selection-end-line="244" selection-end-column="13" />
+            <state relative-caret-position="299">
+              <caret line="256" column="25" selection-start-line="256" selection-start-column="25" selection-end-line="256" selection-end-column="25" />
               <folding>
                 <element signature="e#0#15#0" expanded="true" />
-                <marker date="1536825637216" expanded="true" signature="8856:9056" ph="..." />
               </folding>
             </state>
           </provider>
@@ -119,8 +142,8 @@
       <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/idem_settings.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="402">
-              <caret line="90" selection-start-line="90" selection-end-line="90" />
+            <state relative-caret-position="507">
+              <caret line="98" lean-forward="true" selection-start-line="98" selection-end-line="98" />
             </state>
           </provider>
         </entry>
@@ -128,7 +151,7 @@
       <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/permits.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="300">
+            <state relative-caret-position="195">
               <caret line="20" selection-start-line="20" selection-end-line="20" />
               <folding>
                 <element signature="e#25#43#0" expanded="true" />
@@ -136,8 +159,6 @@
                 <marker date="1536878697425" expanded="true" signature="7332:7450" ph="..." />
                 <marker date="1536878697425" expanded="true" signature="13805:14061" ph="..." />
                 <marker date="1536878697425" expanded="true" signature="17195:17200" ph="..." />
-                <marker date="1536878697425" expanded="true" signature="17618:17641" ph="..." />
-                <marker date="1536878697425" expanded="true" signature="17781:17857" ph="..." />
               </folding>
             </state>
           </provider>
@@ -149,41 +170,42 @@
     <option name="RECENT_TEMPLATES">
       <list>
         <option value="Python Script" />
+        <option value="Python Unit Test" />
       </list>
     </option>
   </component>
   <component name="FindInProjectRecents">
     <findStrings>
-      <find>address:</find>
-      <find>def build_pop</find>
-      <find>program</find>
-      <find>to do</find>
-      <find>build_pop</find>
-      <find>download</find>
-      <find>downloaded</find>
-      <find>class FAc</find>
-      <find>def fetch</find>
-      <find>def download</find>
-      <find>latest</find>
-      <find>assign</find>
-      <find>class ZipUp</find>
-      <find>class Facility</find>
-      <find>Facility(</find>
-      <find>class ZipU</find>
-      <find>from_row</find>
-      <find>get_facilities</find>
-      <find>docs_from_pages</find>
-      <find>class ZipUpdater</find>
-      <find>updaters</find>
-      <find>_updater</find>
-      <find>class</find>
-      <find>class Fa</find>
       <find>get_down</find>
       <find>GET_SEAR</find>
       <find>def ecm</find>
       <find>resultcount</find>
       <find>downloaded_filenames</find>
       <find>def get_downloaded</find>
+      <find>docs_from_pages</find>
+      <find>def get_latest_page</find>
+      <find>address:</find>
+      <find>super</find>
+      <find>downloaded_docs</find>
+      <find>def assign</find>
+      <find>latcol</find>
+      <find>to_html</find>
+      <find>def get_page_pati</find>
+      <find>get_page_patient</find>
+      <find>html</find>
+      <find>build_document_row</find>
+      <find>def download</find>
+      <find>facility.download</find>
+      <find>class Z</find>
+      <find>class Facility</find>
+      <find>class Zip</find>
+      <find>def is_a</find>
+      <find>facility.is_active</find>
+      <find>docs_from</find>
+      <find>Document(</find>
+      <find>class Fac</find>
+      <find>def pull</find>
+      <find>latlongify</find>
     </findStrings>
     <replaceStrings>
       <replace>,</replace>
@@ -201,11 +223,12 @@
         <option value="$PROJECT_DIR$/permits.json" />
         <option value="$PROJECT_DIR$/frontend_sms.py" />
         <option value="$PROJECT_DIR$/idem_settings.example.py" />
+        <option value="$PROJECT_DIR$/permits.py" />
+        <option value="$PROJECT_DIR$/test_idem.py" />
+        <option value="$PROJECT_DIR$/idem.py" />
         <option value="$PROJECT_DIR$/tea_core.py" />
         <option value="$PROJECT_DIR$/idem_settings.py" />
         <option value="$PROJECT_DIR$/enforcement.py" />
-        <option value="$PROJECT_DIR$/permits.py" />
-        <option value="$PROJECT_DIR$/idem.py" />
       </list>
     </option>
   </component>
@@ -225,7 +248,7 @@
         <subPane>
           <expand>
             <path>
-              <item name="legacy" type="b2602c69:ProjectViewProjectNode" />
+              <item name="idem" type="b2602c69:ProjectViewProjectNode" />
               <item name="idem" type="462c0819:PsiDirectoryNode" />
             </path>
           </expand>
@@ -253,7 +276,28 @@
       </list>
     </option>
   </component>
-  <component name="RunManager" selected="Python.permits">
+  <component name="RunManager" selected="Python.idem">
+    <configuration name="idem" type="PythonConfigurationType" factoryName="Python" temporary="true">
+      <module name="idem" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/idem.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
     <configuration name="permits" type="PythonConfigurationType" factoryName="Python" temporary="true">
       <module name="legacy" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -313,9 +357,11 @@
     <list>
       <item itemvalue="Python.records" />
       <item itemvalue="Python.permits" />
+      <item itemvalue="Python.idem" />
     </list>
     <recent_temporary>
       <list>
+        <item itemvalue="Python.idem" />
         <item itemvalue="Python.permits" />
         <item itemvalue="Python.records" />
       </list>
@@ -514,7 +560,84 @@
       <option name="project" value="LOCAL" />
       <updated>1536884165483</updated>
     </task>
-    <option name="localTasksCounter" value="27" />
+    <task id="LOCAL-00027" summary="re-fix crawl_date issue">
+      <created>1536884499544</created>
+      <option name="number" value="00027" />
+      <option name="presentableId" value="LOCAL-00027" />
+      <option name="project" value="LOCAL" />
+      <updated>1536884499544</updated>
+    </task>
+    <task id="LOCAL-00028" summary="add latest_json_path, docstrings">
+      <created>1536887656522</created>
+      <option name="number" value="00028" />
+      <option name="presentableId" value="LOCAL-00028" />
+      <option name="project" value="LOCAL" />
+      <updated>1536887656522</updated>
+    </task>
+    <task id="LOCAL-00029" summary="remove to_html methods no longer used">
+      <created>1536889890271</created>
+      <option name="number" value="00029" />
+      <option name="presentableId" value="LOCAL-00029" />
+      <option name="project" value="LOCAL" />
+      <updated>1536889890271</updated>
+    </task>
+    <task id="LOCAL-00030" summary="refactoring">
+      <created>1536900284057</created>
+      <option name="number" value="00030" />
+      <option name="presentableId" value="LOCAL-00030" />
+      <option name="project" value="LOCAL" />
+      <updated>1536900284057</updated>
+    </task>
+    <task id="LOCAL-00031" summary="setup for cron">
+      <created>1536900335962</created>
+      <option name="number" value="00031" />
+      <option name="presentableId" value="LOCAL-00031" />
+      <option name="project" value="LOCAL" />
+      <updated>1536900335962</updated>
+    </task>
+    <task id="LOCAL-00032" summary="PEP8 compliance">
+      <created>1536900743458</created>
+      <option name="number" value="00032" />
+      <option name="presentableId" value="LOCAL-00032" />
+      <option name="project" value="LOCAL" />
+      <updated>1536900743458</updated>
+    </task>
+    <task id="LOCAL-00033" summary="cleanup remaining HTMLcruft">
+      <created>1536901003729</created>
+      <option name="number" value="00033" />
+      <option name="presentableId" value="LOCAL-00033" />
+      <option name="project" value="LOCAL" />
+      <updated>1536901003729</updated>
+    </task>
+    <task id="LOCAL-00034" summary="cleanup">
+      <created>1536932557138</created>
+      <option name="number" value="00034" />
+      <option name="presentableId" value="LOCAL-00034" />
+      <option name="project" value="LOCAL" />
+      <updated>1536932557138</updated>
+    </task>
+    <task id="LOCAL-00035" summary="refactoring, fix mutable default in Facility">
+      <created>1536948368893</created>
+      <option name="number" value="00035" />
+      <option name="presentableId" value="LOCAL-00035" />
+      <option name="project" value="LOCAL" />
+      <updated>1536948368893</updated>
+    </task>
+    <task id="LOCAL-00036" summary="remove wordpress, add FTP">
+      <created>1536950339500</created>
+      <option name="number" value="00036" />
+      <option name="presentableId" value="LOCAL-00036" />
+      <option name="project" value="LOCAL" />
+      <updated>1536950339500</updated>
+    </task>
+    <task id="LOCAL-00037" summary="refactor FTP handling">
+      <created>1536951218166</created>
+      <option name="number" value="00037" />
+      <option name="presentableId" value="LOCAL-00037" />
+      <option name="project" value="LOCAL" />
+      <updated>1536951218166</updated>
+    </task>
+    <option name="localTasksCounter" value="38" />
     <servers />
   </component>
   <component name="TodoView" selected-index="4">
@@ -530,7 +653,7 @@
     <frame x="-1" y="24" width="1362" height="721" extended-state="6" />
     <editor active="true" />
     <layout>
-      <window_info active="true" content_ui="combo" id="Project" order="0" visible="true" weight="0.084517576" />
+      <window_info active="true" content_ui="combo" id="Project" order="0" visible="true" weight="0.085996956" />
       <window_info id="Structure" order="1" side_tool="true" weight="0.25" />
       <window_info id="Favorites" order="2" side_tool="true" />
       <window_info anchor="bottom" id="Message" order="0" />
@@ -543,7 +666,7 @@
       <window_info anchor="bottom" id="Python Console" order="7" weight="0.011824325" />
       <window_info anchor="bottom" id="Terminal" order="8" weight="0.3293919" />
       <window_info anchor="bottom" id="Event Log" order="9" sideWeight="0.50076103" side_tool="true" weight="0.3293919" />
-      <window_info anchor="bottom" id="Version Control" order="10" sideWeight="0.49923897" weight="0.32828283" />
+      <window_info anchor="bottom" id="Version Control" order="10" sideWeight="0.49923897" weight="0.32659933" />
       <window_info anchor="bottom" id="Inspection Results" order="11" weight="0.09886548" />
       <window_info anchor="right" id="Commander" order="0" weight="0.4" />
       <window_info anchor="right" id="Ant Build" order="1" weight="0.25" />
@@ -576,16 +699,6 @@
     <option name="myLimit" value="2678400000" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="general update" />
-    <MESSAGE value="merging in remote" />
-    <MESSAGE value="TSV roundtripping &amp; misc PEP8" />
-    <MESSAGE value="minor fixes" />
-    <MESSAGE value="interoperability updates" />
-    <MESSAGE value="setup JSON export" />
-    <MESSAGE value="add popup builder" />
-    <MESSAGE value="PEP8 fixes" />
-    <MESSAGE value="rename save_active_sites_as_json for clarity" />
-    <MESSAGE value="improve geodata handling" />
     <MESSAGE value="centralize filepath generating" />
     <MESSAGE value="generalize doctype in get_daily_filepath" />
     <MESSAGE value="smoothen JSON handling, add some docstrings" />
@@ -600,8 +713,18 @@
     <MESSAGE value="refactor permit.__init__" />
     <MESSAGE value="refactor download operation" />
     <MESSAGE value="refactor to avoid cycling over large number of files when not required" />
+    <MESSAGE value="re-fix crawl_date issue" />
+    <MESSAGE value="add latest_json_path, docstrings" />
+    <MESSAGE value="remove to_html methods no longer used" />
     <MESSAGE value="refactoring" />
-    <option name="LAST_COMMIT_MESSAGE" value="refactoring" />
+    <MESSAGE value="setup for cron" />
+    <MESSAGE value="PEP8 compliance" />
+    <MESSAGE value="cleanup remaining HTMLcruft" />
+    <MESSAGE value="cleanup" />
+    <MESSAGE value="refactoring, fix mutable default in Facility" />
+    <MESSAGE value="remove wordpress, add FTP" />
+    <MESSAGE value="refactor FTP handling" />
+    <option name="LAST_COMMIT_MESSAGE" value="refactor FTP handling" />
   </component>
   <component name="editorHistoryManager">
     <entry file="file://$APPLICATION_HOME_DIR$/helpers/pydev/pydevd.py">
@@ -623,42 +746,9 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/idem_settings.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="402">
-          <caret line="90" selection-start-line="90" selection-end-line="90" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/tea_core.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="3">
-          <caret line="244" column="13" selection-start-line="244" selection-start-column="13" selection-end-line="244" selection-end-column="13" />
-          <folding>
-            <element signature="e#0#15#0" expanded="true" />
-            <marker date="1536825637216" expanded="true" signature="8856:9056" ph="..." />
-          </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/enforcement.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="198">
-          <caret line="474" column="33" selection-start-line="474" selection-start-column="25" selection-end-line="474" selection-end-column="33" />
-          <folding>
-            <element signature="e#0#15#0" expanded="true" />
-            <marker date="1536869036554" expanded="true" signature="13010:13145" ph="..." />
-            <marker date="1536869036554" expanded="true" signature="15437:15713" ph="..." />
-            <marker date="1536869036554" expanded="true" signature="15778:16127" ph="..." />
-            <marker date="1536869036554" expanded="true" signature="18661:18684" ph="..." />
-            <marker date="1536869036554" expanded="true" signature="18698:18699" ph="..." />
-          </folding>
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/permits.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="300">
+        <state relative-caret-position="195">
           <caret line="20" selection-start-line="20" selection-end-line="20" />
           <folding>
             <element signature="e#25#43#0" expanded="true" />
@@ -666,25 +756,80 @@
             <marker date="1536878697425" expanded="true" signature="7332:7450" ph="..." />
             <marker date="1536878697425" expanded="true" signature="13805:14061" ph="..." />
             <marker date="1536878697425" expanded="true" signature="17195:17200" ph="..." />
-            <marker date="1536878697425" expanded="true" signature="17618:17641" ph="..." />
-            <marker date="1536878697425" expanded="true" signature="17781:17857" ph="..." />
           </folding>
         </state>
       </provider>
     </entry>
     <entry file="file://$PROJECT_DIR$/idem.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="435">
-          <caret line="638" column="66" selection-start-line="638" selection-start-column="66" selection-end-line="638" selection-end-column="66" />
+        <state relative-caret-position="15">
+          <caret line="1415" column="26" lean-forward="true" selection-start-line="1415" selection-start-column="26" selection-end-line="1415" selection-end-column="26" />
           <folding>
             <element signature="e#299#317#0" expanded="true" />
-            <marker date="1536884463908" expanded="true" signature="2502:3288" ph="..." />
-            <marker date="1536884463908" expanded="true" signature="17760:18207" ph="..." />
-            <marker date="1536884463908" expanded="true" signature="20629:20633" ph="..." />
-            <marker date="1536884463908" expanded="true" signature="25967:26312" ph="..." />
-            <marker date="1536884463908" expanded="true" signature="27937:28052" ph="..." />
-            <marker date="1536884463908" expanded="true" signature="47668:48234" ph="..." />
-            <marker date="1536884463908" expanded="true" signature="48263:48611" ph="..." />
+            <element signature="e#958#5991#0" />
+            <element signature="e#6064#7568#0" />
+            <element signature="e#7608#8163#0" />
+            <element signature="e#8220#8354#0" />
+            <element signature="e#8640#8818#0" />
+            <marker date="1536940124180" expanded="true" signature="2294:2511" ph="..." />
+            <marker date="1536940124180" expanded="true" signature="3656:4318" ph="..." />
+            <marker date="1536940124180" expanded="true" signature="3969:4318" ph="..." />
+            <marker date="1536940124180" expanded="true" signature="4580:4804" ph="..." />
+            <marker date="1536940124180" expanded="true" signature="5375:5591" ph="..." />
+            <marker date="1536940124180" expanded="false" signature="8524:8710" ph="..." />
+            <marker date="1536940124180" expanded="true" signature="10958:11268" ph="..." />
+            <marker date="1536940124180" expanded="true" signature="11301:11544" ph="..." />
+            <marker date="1536940124180" expanded="true" signature="11575:11799" ph="..." />
+            <marker date="1536940124180" expanded="true" signature="13579:14017" ph="..." />
+            <marker date="1536940124180" expanded="true" signature="16159:16606" ph="..." />
+            <marker date="1536940124180" expanded="true" signature="18751:19054" ph="..." />
+            <marker date="1536940124180" expanded="true" signature="19175:19179" ph="..." />
+            <marker date="1536940124180" expanded="true" signature="19993:20564" ph="..." />
+            <marker date="1536940124180" expanded="true" signature="23537:24056" ph="..." />
+            <marker date="1536940124180" expanded="true" signature="23811:24056" ph="..." />
+            <marker date="1536940124180" expanded="true" signature="25703:26048" ph="..." />
+            <marker date="1536940124180" expanded="true" signature="27673:27788" ph="..." />
+            <marker date="1536940124180" expanded="true" signature="28696:28697" ph="..." />
+            <marker date="1536940124180" expanded="true" signature="53181:53372" ph="..." />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/tea_core.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="299">
+          <caret line="256" column="25" selection-start-line="256" selection-start-column="25" selection-end-line="256" selection-end-column="25" />
+          <folding>
+            <element signature="e#0#15#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/idem_settings.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="507">
+          <caret line="98" lean-forward="true" selection-start-line="98" selection-end-line="98" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/test_idem.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="105">
+          <caret line="7" column="21" selection-start-line="7" selection-start-column="21" selection-end-line="7" selection-end-column="21" />
+          <folding>
+            <element signature="e#0#15#0" expanded="true" />
+            <marker date="1536887815442" expanded="true" signature="135:198" ph="..." />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/enforcement.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="177">
+          <caret line="540" column="8" selection-start-line="540" selection-start-column="8" selection-end-line="540" selection-end-column="8" />
+          <folding>
+            <element signature="e#0#15#0" expanded="true" />
+            <marker date="1536956741272" expanded="true" signature="15497:15499" ph="..." />
           </folding>
         </state>
       </provider>
