@@ -598,3 +598,7 @@ def do_cron():
     pull_vfc_geodata(docs)
     write_usable_json(docs)
     write_usable_json(docs, latest_json_path)
+
+
+if __name__ == "__main__":
+    do_cron()
