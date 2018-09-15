@@ -162,7 +162,7 @@ class Permit(tea_core.Document):
         self.more = more
         self.pm = self.extract_info("Project Manager:")
         self.number = self.extract_info("Permit Number:")
-        self.program = infer_program_from_url(url)
+        self.program = infer_program_from_url(self.url)
         if comment == "Yes":
             self.comment_period = dates
             self.convert_dates()
@@ -189,8 +189,9 @@ class Permit(tea_core.Document):
 
 
 def infer_program_from_url(url):
+    url = url.lower()
     if "npdes" in url:
-        return "Wastewater (NPDES)"
+        return "Wastewater"
     if "air" in url:
         return "Air"
     if "dw" in url:
@@ -224,9 +225,9 @@ class PermitUpdater:
     def compare_permits(self, newpage, oldpage):
         newpermits = self.get_permits_from_page(newpage)
         oldpermits = self.get_permits_from_page(oldpage)
-        new = newpermits - oldpermits
-        old = oldpermits - newpermits
-        return new, old
+        added = newpermits - oldpermits
+        subtracted = oldpermits - newpermits
+        return added, subtracted
 
     def get_permits_from_page(self, page):
         permits = set()

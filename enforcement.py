@@ -424,7 +424,7 @@ def daily_action(date=datetime.date.today()):
 
 
 def get_daily_filepath(suffix, date=None):
-    filepath = tea_core.get_daily_filepath(suffix, date, enforcementdir)
+    filepath = tea_core.get_daily_filepath(suffix, date, enforcementdir, doctype="enforcement")
     return filepath
 
 
