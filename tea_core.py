@@ -410,12 +410,183 @@ def js_to_geojson(js):
     return json
 
 
-def get_county_poly(path="/home/sam/Downloads/Counties/tl_2013_18_cousub.shp", countycode=45):
-    counties = shapefile.Reader(path).shapeRecords()
-    county = [x for x in counties if x.record[-1] == int(countycode)][0]
-    points = county.shape.points
+def get_county_poly(countyname="Lake"):  # for http://maps.indiana.edu/download/Reference/PLSS_Counties.zip
+    countypath = idem_settings.countypath
+    reader = shapefile.Reader(countypath)
+    county = [x for x in reader.shapeRecords() if x.record[3] == countyname][0]
+    points = convert_list_to_latlong(county.shape.points)
+    points = [(x[1], x[0]) for x in points]  # census uses (lon, lat)
     poly = Polygon(points)
     return poly
+
+
+def find_places_in_county(countypoly=None, countyname="Lake"):
+    if countypoly is None:
+        countypoly = get_county_poly(countyname)
+    placespath = idem_settings.placespath  # https://www2.census.gov/geo/tiger/GENZ2017/shp/cb_2017_18_place_500k.zip
+    places = shapefile.Reader(placespath).shapeRecords()
+    local_places = []
+    for p in places:
+        poly = Polygon(p.shape.points)
+        placename = p.record[5]
+        centroid = poly.centroid
+        if countypoly.contains(centroid):
+            local_places.append((placename, poly))
+    return local_places
+
+
+def sluggify(placename):
+    slug = placename.lower()
+    slug = slug.replace(" ", "-")
+    slug = slug.replace(".", "")
+    return slug
+
+
+def generate_coord_text(coords):
+    coord_text = "["
+    index = 0
+    for c in coords:
+        newtext = ""
+        if index != 0:
+            newtext = ", "
+        text1 = str(c[0])
+        text2 = str(c[1])
+        newtext += "[%s, %s]" % (text1, text2)
+        coord_text += newtext
+        index += 1
+    coord_text += "]"
+    return coord_text
+
+
+def generate_centroid_text(polygon, reverse=True):
+    centroid = polygon.centroid.coords[0]
+    centroid = tuple([round(x, 3) for x in centroid])
+    if reverse:
+        centroid = (centroid[1], centroid[0])
+    centroid_text = "[%s, %s]" % centroid
+    return centroid_text
+
+
+def create_polygon_js(polygon, reverse=True, color="white", name=None):
+    coords = polygon.boundary.coords
+    if reverse:
+        coords = [(x[1], x[0]) for x in coords]
+    coord_text = generate_coord_text(coords)
+    centroid_text = generate_centroid_text(polygon)
+    template = "var coords = %s; \n"
+    template += "var polygon = L.polygon(coords, {color: '%s'});\n"
+    template += "var centroid = %s;\n"
+    js = template % (coord_text, color, centroid_text)
+    if name is not None:
+        nameline = 'var placename = "%s";\n' % name
+        js += nameline
+    return js
+
+
+def copy_file(source, destination):
+    handle = open(source)
+    with open(destination, "w") as target:
+        target.write(handle.read())
+
+
+def setup_locality(placename, polygon, main_directory=None):
+    if main_directory is None:
+        main_directory = idem_settings.websitedir
+    slug = sluggify(placename)
+    directory = os.path.join(main_directory, slug)
+    if not os.path.exists(directory):
+        os.mkdir(directory)
+    filepath = os.path.join(directory, "polygon.js")
+    polygon_js = create_polygon_js(polygon, name=placename)
+    open(filepath, "w").write(polygon_js)
+    indexpath = os.path.join(main_directory, "index.html")
+    target = os.path.join(directory, "index.html")
+    copy_file(indexpath, target)
+    for filename in ["latest_vfc.json", "latest_permits.json", "latest_enforcement.json"]:
+        inpath = os.path.join(main_directory, filename)
+        result = filter_json_by_polygon(inpath, polygon, directory=directory)
+        print result
+
+
+def copy_data_over(date):
+    # function for populating website directories with existing JSON files.
+    import idem
+    import enforcement
+    import permits
+    web_directory = idem_settings.websitedir
+    year_directory = os.path.join(web_directory, str(date.year))
+    monthname = date.strftime("%B").lower()
+    month_directory = os.path.join(year_directory, monthname)
+    day = str(date.day)
+    day_directory = os.path.join(month_directory, day)
+    for directory in [year_directory, month_directory, day_directory]:
+        if not os.path.exists(directory):
+            os.mkdir(directory)
+    for module in [idem, enforcement, permits]:
+        jsonpath = module.get_json_filepath(date)
+        if os.path.exists(jsonpath):
+            print jsonpath
+            filename = os.path.split(module.latest_json_path)[-1]
+            filepath = os.path.join(day_directory, filename)
+            open(filepath, "w").write(open(jsonpath).read())
+    source_indexpath = os.path.join(web_directory, "index.html")
+    target_indexpath = os.path.join(day_directory, "index.html")
+    open(target_indexpath, "w").write(open(source_indexpath).read())
+
+
+def update_all_local_subpages(root=idem_settings.websitedir):
+    pass
+    # todo:
+    # collect local subdirectories
+    # get coords from polygon.js
+    # copy index.html from root to all subs
+    # filter all json
+    # update timestamp
+    # set this to run whenever main directory updated
+
+
+def timestamp_directory(directory, date=None):
+    if date is None:
+        date = datetime.date.today()
+    usdate = date.strftime("%B %d, %Y")
+    text = "var timestamp = '%s';" % usdate
+    filepath = os.path.join(directory, "timestamp.js")
+    open(filepath, "w").write(text)
+    return filepath
+
+
+def filter_json_by_polygon(jsonpath, poly, buff=0.015, directory=None):
+    """
+    Take an existing JSON file and either return or save a
+    :param jsonpath: path to existing JSON file (covering a larger area such as the county)
+    :param poly: polygon for smaller area
+    :param buff: amount of buffering to avoid arbitrary exclusion
+    :param directory: directory in which the finished file will be saved, if any
+    :return: str
+    """
+    filtered = []
+    # retrieve, clean up and parse JSON file
+    jsontext = open(jsonpath).read()
+    declaration, jsontext = jsontext.split(" = ", 1)
+    json = geojson.loads(jsontext)
+    # filter features by whether included in buffered polygon
+    for feature in json.features:
+        point = Point(feature.geometry.coordinates)
+        if poly.buffer(buff).contains(point):
+            filtered.append(feature)
+    # obtain finished JSON object
+    collection = geojson.FeatureCollection(filtered)
+    # render back into string form
+    filtered_text = geojson.dumps(collection)
+    filtered_text = declaration + " = " + filtered_text
+    # save to file
+    if directory is None:
+        return filtered_text
+    else:
+        filename = os.path.split(jsonpath)[-1]
+        filepath = os.path.join(directory, filename)
+        open(filepath, "w").write(filtered_text)
+        return filepath
 
 
 def get_daily_filepath(suffix, date=None, directory=idem_settings.maindir, doctype="permits"):
