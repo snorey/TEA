@@ -7,7 +7,8 @@ def send_message(to, content=""):
     client = Client(twilio_sid, twilio_token)
     if not to.startswith("+"):
         to = "+" + to
-    client.messages.create(to=to, from_=twilio_number, body=content)
+    result = client.messages.create(to=to, from_=twilio_number, body=content)
+    return result
 
 
 def get_bindings():
@@ -32,7 +33,7 @@ def send_to_user_by_tag(content, binding, tag=None):
         tag = tag.upper()
         user_tags = [x.upper() for x in binding.tags]
         if tag not in user_tags:
-            continue
+            return
     number = binding.address
     result = send_message(number, content)
     return result
