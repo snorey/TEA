@@ -586,6 +586,7 @@ def filter_json_by_polygon(jsonpath, poly, buff=0.015, directory=None):
         filename = os.path.split(jsonpath)[-1]
         filepath = os.path.join(directory, filename)
         open(filepath, "w").write(filtered_text)
+        timestamp_directory(directory)
         return filepath
 
 

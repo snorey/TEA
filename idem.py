@@ -1566,6 +1566,7 @@ def save_active_sites_as_json(collection, lookback=7, filepath=None, also_save=T
     result = write_usable_json(json_obj, filepath)
     if also_save:
         write_usable_json(json_obj, latest_json_path)
+        tea_core.timestamp_directory(idem_settings.websitedir)
     return result
 
 
