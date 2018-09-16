@@ -18,10 +18,12 @@ def get_bindings():
 
 
 def send_message_by_tag(content, tag=None):
+    tag = tag.upper()
     bindings = get_bindings()
     for b in bindings:
         if tag is not None:
-            if tag not in b.tags:
+            tags = [x.upper() for x in b.tags]
+            if tag not in tags:
                 continue
         number = b.address
         send_message(number, content)
