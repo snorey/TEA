@@ -17,11 +17,12 @@ def get_bindings():
     return bindings
 
 
-def send_message_by_tag(content, tag=None):
+def broadcast_message_by_tag(content, tag=None):
     bindings = get_bindings()
     results = []
     for b in bindings:
         result = send_to_user_by_tag(content, b, tag)
+        print b.address, str(result)
         results.append(result)
     return results
 
