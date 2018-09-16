@@ -443,19 +443,28 @@ def sluggify(placename):
 
 
 def generate_coord_text(coords):
-    coord_text = "["
+    coord_text = loop_coord_list(coords)
+    coord_text = "[ %s ]" % coord_text
+    return coord_text
+
+
+def loop_coord_list(coords, text=""):
     index = 0
     for c in coords:
         newtext = ""
         if index != 0:
             newtext = ", "
-        text1 = str(c[0])
-        text2 = str(c[1])
-        newtext += "[%s, %s]" % (text1, text2)
-        coord_text += newtext
+        newtext += textify_coord_pair(c)
+        text += newtext
         index += 1
-    coord_text += "]"
-    return coord_text
+    return text
+
+
+def textify_coord_pair(pair):
+    text1 = str(pair[0])
+    text2 = str(pair[1])
+    text = "[%s, %s]" % (text1, text2)
+    return text
 
 
 def generate_centroid_text(polygon, reverse=True):
@@ -467,20 +476,43 @@ def generate_centroid_text(polygon, reverse=True):
     return centroid_text
 
 
+def reverse_coords(coord_list):
+    done = [(x[1], x[0]) for x in coord_list]
+    return done
+
+
 def create_polygon_js(polygon, reverse=True, color="white", name=None):
     coords = polygon.boundary.coords
     if reverse:
-        coords = [(x[1], x[0]) for x in coords]
+        coords = reverse_coords(coords)
     coord_text = generate_coord_text(coords)
     centroid_text = generate_centroid_text(polygon)
-    template = "var coords = %s; \n"
-    template += "var polygon = L.polygon(coords, {color: '%s'});\n"
-    template += "var centroid = %s;\n"
+    template = "var coords = %s; \n" \
+               "var polygon = L.polygon(coords, {color: '%s'});\n" \
+               "var centroid = %s;\n"
     js = template % (coord_text, color, centroid_text)
     if name is not None:
-        nameline = 'var placename = "%s";\n' % name
-        js += nameline
+        js += declare_name_and_shortname(name)
     return js
+
+
+def declare_name_and_shortname(name):
+    nameline = 'var placename = "%s";\n' % name
+    shortname = get_shortname(name)
+    shortnameline = 'var shortname = "%s";\n' % shortname
+    result = nameline + shortnameline
+    return result
+
+
+def get_shortname(placename):
+    slug = sluggify(placename)
+    if "-" in slug:
+        pieces = slug.split("-")
+        firsts = [x[0].upper() for x in pieces]
+        shortname = "".join(firsts)
+    else:
+        shortname = placename
+    return shortname
 
 
 def copy_file(source, destination):
@@ -508,41 +540,62 @@ def setup_locality(placename, polygon, main_directory=None):
         print result
 
 
-def copy_data_over(date):
-    # function for populating website directories with existing JSON files.
+def get_json_paths(date=None):
     import idem
     import enforcement
     import permits
-    web_directory = idem_settings.websitedir
-    year_directory = os.path.join(web_directory, str(date.year))
-    monthname = date.strftime("%B").lower()
-    month_directory = os.path.join(year_directory, monthname)
-    day = str(date.day)
-    day_directory = os.path.join(month_directory, day)
-    for directory in [year_directory, month_directory, day_directory]:
-        if not os.path.exists(directory):
-            os.mkdir(directory)
+    paths = []
     for module in [idem, enforcement, permits]:
-        jsonpath = module.get_json_filepath(date)
-        if os.path.exists(jsonpath):
-            print jsonpath
-            filename = os.path.split(module.latest_json_path)[-1]
-            filepath = os.path.join(day_directory, filename)
-            open(filepath, "w").write(open(jsonpath).read())
-    source_indexpath = os.path.join(web_directory, "index.html")
-    target_indexpath = os.path.join(day_directory, "index.html")
-    open(target_indexpath, "w").write(open(source_indexpath).read())
+        if date is None:
+            path = module.latest_json_path
+        else:
+            path = module.get_json_filepath(date)
+        paths.append(path)
+    # add new JSON layers here
+    return paths
 
 
-def update_all_local_subpages(root=idem_settings.websitedir):
-    pass
-    # todo:
-    # collect local subdirectories
-    # get coords from polygon.js
-    # copy index.html from root to all subs
-    # filter all json
-    # update timestamp
+def update_all_local_directories(root=idem_settings.websitedir):
     # set this to run whenever main directory updated
+    directories = filter_local_directories(root)
+    indexfile, timefile = get_root_files(root)
+    for directory in directories:
+        update_local_directory(directory, indexfile, timefile)
+
+
+def filter_local_directories(root):
+    directories = os.listdir(root)
+    directories = [os.path.join(root, x) for x in directories]
+    directories = [x for x in directories if "polygon.js" in os.listdir(x)]
+    return directories
+
+
+def get_root_files(root):
+    indexpath = os.path.join(root, "index.html")
+    indexfile = open(indexpath).read()
+    timepath = os.path.join(root, "timestamp.js")
+    if os.path.exists(timepath):
+        timefile = open(timepath).read()
+    else:
+        timefile = None
+    return indexfile, timefile
+
+
+def extract_coords_from_polygon_js(filepath, reverse=True):
+    lines = [x for x in open(filepath) if x.startswith("var coord")]
+    if not lines:
+        print "Unable to find coords!", filepath
+        return
+    coord_text = lines[0].split("=", 1)[1]
+    finder = "\[\s*([\d\.\-]+),\s*([\d\.\-]+)\s*\]"
+    coord_pieces = re.findall(finder, coord_text)
+    if not coord_pieces:
+        print "Arghhh!"
+        return
+    coords = [(float(x[0]), float(x[1])) for x in coord_pieces]
+    if reverse:
+        coords = reverse_coords(coords)
+    return coords
 
 
 def timestamp_directory(directory, date=None):
@@ -555,9 +608,29 @@ def timestamp_directory(directory, date=None):
     return filepath
 
 
+def update_local_directory(directory, indexfile=None, timefile=None):
+    # get coords from existing polygon.js
+    polypath = os.path.join(directory, "polygon.js")
+    coords = extract_coords_from_polygon_js(polypath)
+    polygon = Polygon(coords)
+    # copy index.html from root to all subs
+    if indexfile is not None:
+        newindexpath = os.path.join(directory, "index.html")
+        open(newindexpath, "w").write(indexfile)
+    # filter all json
+    for path in get_json_paths():
+        filter_json_by_polygon(path, polygon, directory=directory)
+    # update timestamp
+    if timefile is None:
+        timestamp_directory(directory)
+    else:
+        new_timepath = os.path.join(directory, "timestamp.js")
+        open(new_timepath, "w").write(timefile)
+
+
 def filter_json_by_polygon(jsonpath, poly, buff=0.015, directory=None):
     """
-    Take an existing JSON file and either return or save a
+    Filter an existing JSON file and either return result or save to corresponding filename in new directory.
     :param jsonpath: path to existing JSON file (covering a larger area such as the county)
     :param poly: polygon for smaller area
     :param buff: amount of buffering to avoid arbitrary exclusion
