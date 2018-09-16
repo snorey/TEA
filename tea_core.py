@@ -18,6 +18,7 @@ DEFAULT_WAIT_AFTER_ERROR = 30
 TIMEOUT = 100
 RETRY_LIMIT = 10
 NUM_COORD_DIGITS = 3
+DEFAULT_BUFFER = 0.015
 
 # core functionality for TEA project
 # certain concepts are consistent across applications:
@@ -364,16 +365,16 @@ def get_name_and_container(shaperecord, longlat=True):
     return zip_name, zip_container
 
 
-def get_zips(path='/home/sam/TEA/ZIP/ZCTA_TIGER05_IN.shp', target_zips=idem_settings.lake_zips):
+def get_zips(path=idem_settings.zippath, target_zips=idem_settings.lake_zips):
     shaperecords = shapefile.Reader(path).shapeRecords()
-    zips = {}
+    zipdic = {}
     for s in shaperecords:
         zip_name, zip_container = get_name_and_container(s)
         if target_zips:
             if zip_name not in target_zips:
                 continue
-        zips[zip_name] = zip_container
-    return zips
+        zipdic[zip_name] = zip_container
+    return zipdic
 
 
 def filter_json_by_geography(json, shape):  # assumes json is FeatureCollection of Features that are points
@@ -482,7 +483,13 @@ def reverse_coords(coord_list):
 
 
 def create_polygon_js(polygon, reverse=True, color="white", name=None):
-    coords = polygon.boundary.coords
+    try:
+        coords = polygon.boundary.coords
+    except NotImplementedError:  # MultiLineString boundary
+        print "Trouble!"
+        coords = []
+        for boundary in polygon.boundary:
+            coords.extend(boundary.coords)
     if reverse:
         coords = reverse_coords(coords)
     coord_text = generate_coord_text(coords)
@@ -555,12 +562,38 @@ def get_json_paths(date=None):
     return paths
 
 
-def update_all_local_directories(root=idem_settings.websitedir):
-    # set this to run whenever main directory updated
-    directories = filter_local_directories(root)
-    indexfile, timefile = get_root_files(root)
-    for directory in directories:
-        update_local_directory(directory, indexfile, timefile)
+def filter_json_by_polygon(jsonpath, poly, buff=DEFAULT_BUFFER, directory=None):
+    """
+    Filter an existing JSON file and either return result or save to corresponding filename in new directory.
+    :param jsonpath: path to existing JSON file (covering a larger area such as the county)
+    :param poly: polygon for smaller area
+    :param buff: amount of buffering to avoid arbitrary exclusion
+    :param directory: directory in which the finished file will be saved, if any
+    :return: str
+    """
+    filtered = []
+    # retrieve, clean up and parse JSON file
+    jsontext = open(jsonpath).read()
+    declaration, jsontext = jsontext.split(" = ", 1)
+    json = geojson.loads(jsontext)
+    # filter features by whether included in buffered polygon
+    for feature in json.features:
+        point = Point(feature.geometry.coordinates)
+        if poly.buffer(buff).contains(point):
+            filtered.append(feature)
+    # obtain finished JSON object
+    collection = geojson.FeatureCollection(filtered)
+    # render back into string form
+    filtered_text = geojson.dumps(collection)
+    filtered_text = declaration + " = " + filtered_text
+    # save to file
+    if directory is None:
+        return filtered_text
+    else:
+        filename = os.path.split(jsonpath)[-1]
+        filepath = os.path.join(directory, filename)
+        open(filepath, "w").write(filtered_text)
+        return filepath
 
 
 def filter_local_directories(root):
@@ -570,7 +603,7 @@ def filter_local_directories(root):
     return directories
 
 
-def get_root_files(root):
+def get_root_files(root=idem_settings.websitedir):
     indexpath = os.path.join(root, "index.html")
     indexfile = open(indexpath).read()
     timepath = os.path.join(root, "timestamp.js")
@@ -628,39 +661,12 @@ def update_local_directory(directory, indexfile=None, timefile=None):
         open(new_timepath, "w").write(timefile)
 
 
-def filter_json_by_polygon(jsonpath, poly, buff=0.015, directory=None):
-    """
-    Filter an existing JSON file and either return result or save to corresponding filename in new directory.
-    :param jsonpath: path to existing JSON file (covering a larger area such as the county)
-    :param poly: polygon for smaller area
-    :param buff: amount of buffering to avoid arbitrary exclusion
-    :param directory: directory in which the finished file will be saved, if any
-    :return: str
-    """
-    filtered = []
-    # retrieve, clean up and parse JSON file
-    jsontext = open(jsonpath).read()
-    declaration, jsontext = jsontext.split(" = ", 1)
-    json = geojson.loads(jsontext)
-    # filter features by whether included in buffered polygon
-    for feature in json.features:
-        point = Point(feature.geometry.coordinates)
-        if poly.buffer(buff).contains(point):
-            filtered.append(feature)
-    # obtain finished JSON object
-    collection = geojson.FeatureCollection(filtered)
-    # render back into string form
-    filtered_text = geojson.dumps(collection)
-    filtered_text = declaration + " = " + filtered_text
-    # save to file
-    if directory is None:
-        return filtered_text
-    else:
-        filename = os.path.split(jsonpath)[-1]
-        filepath = os.path.join(directory, filename)
-        open(filepath, "w").write(filtered_text)
-        timestamp_directory(directory)
-        return filepath
+def update_all_local_directories(root=idem_settings.websitedir):
+    # set this to run whenever main directory updated
+    directories = filter_local_directories(root)
+    indexfile, timefile = get_root_files(root)
+    for directory in directories:
+        update_local_directory(directory, indexfile, timefile)
 
 
 def get_daily_filepath(suffix, date=None, directory=idem_settings.maindir, doctype="permits"):
