@@ -138,13 +138,15 @@ class Document(object):
         assign_values(self, arguments, tolerant=True)
 
     def __eq__(self, other):
-        if type(other) == str:
-            return self.filename == other
-        else:
-            return self.filename == other.filename
+        return hash(self) == hash(other)
 
     def __hash__(self):
-        return hash(self.filename)
+        if self.filename:
+            return hash(self.filename)
+        elif self.url:
+            return hash(self.url)
+        else:
+            return hash(self.id)
 
     @property
     def date(self):
