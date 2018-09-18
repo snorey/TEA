@@ -83,7 +83,7 @@ class Permit(tea_core.Document):
     def download(self):
         filename = self.get_filename()
         filepath = os.path.join(self.directory, filename)
-        urllib.urlretrieve(permit.url, filepath)
+        urllib.urlretrieve(self.url, filepath)
         return filepath
 
     def is_comment_open(self, date=datetime.date.today()):
@@ -330,7 +330,8 @@ class PermitUpdater:
         return logtext
 
     def update_file_list(self):
-        self.files = set(os.listdir(permitdir))
+        files = os.listdir(self.directory)
+        return set(files)
 
     def download_new_permits(self):
         if not self.whether_download:
