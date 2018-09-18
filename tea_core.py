@@ -1,5 +1,4 @@
 import datetime
-import ftplib
 import geojson  # pip install geojson
 import idem_settings
 import os
@@ -236,47 +235,6 @@ def do_patiently(action, *args, **kwargs):
 def retrieve_patiently(url, path):
     do_patiently(urllib.urlretrieve, url, path)
     return path
-
-
-# FTP
-
-class FTPsession:
-
-    def __init__(self):
-        user = idem_settings.ftp_user
-        password = idem_settings.ftp_password
-        server = idem_settings.ftp_server
-        self.ftp = ftplib.FTP(server, user, password)
-
-    def upload(self, path):
-        """
-        Upload file to FTP server.
-        @param path: The path to the file to upload
-        """
-        suffixes = ["txt", "json", "html", "js", "tsv"]
-        filename = os.path.split(path)[-1]
-        suffix = filename.split(".")[-1]
-        if suffix in suffixes:
-            print "uploading as text:", path
-            with open(path) as handle:
-                command = "STOR %s %s " % (path, filename)
-                self.ftp.storlines(command, handle)
-        else:
-            print "uploading as binary:", path
-            with open(path, "rb") as handle:
-                command = "STOR %s %s " % (path, filename)
-                self.ftp.storbinary(command, handle, 1024)
-
-    def upload_website_files(self):
-        """
-        Iterate over website directory and sync all files to remote server.
-        :return: None
-        """
-        directory = idem_settings.websitedir
-        filenames = os.listdir(directory)
-        paths = [os.path.join(directory, x) for x in filenames]
-        for p in paths:
-            self.upload(p)
 
 
 def coord_from_address(address):
@@ -596,9 +554,10 @@ def filter_json_by_polygon(jsonpath, poly, buff=DEFAULT_BUFFER, directory=None):
         return filepath
 
 
-def filter_local_directories(root):
+def filter_local_directories(root=idem_settings.websitedir):
     directories = os.listdir(root)
     directories = [os.path.join(root, x) for x in directories]
+    directories = [x for x in directories if os.path.isdir(x)]
     directories = [x for x in directories if "polygon.js" in os.listdir(x)]
     return directories
 
@@ -666,6 +625,7 @@ def update_all_local_directories(root=idem_settings.websitedir):
     directories = filter_local_directories(root)
     indexfile, timefile = get_root_files(root)
     for directory in directories:
+        print directory
         update_local_directory(directory, indexfile, timefile)
 
 
