@@ -31,6 +31,7 @@ class Permit(tea_core.Document):
     number = ""
     end_date = None
     start_date = None
+    directory = permitdir
 
     def __init__(self, **arguments):
         super(Permit, self).__init__(**arguments)
@@ -78,6 +79,12 @@ class Permit(tea_core.Document):
             return value
         else:
             return False
+
+    def download(self):
+        filename = self.get_filename()
+        filepath = os.path.join(self.directory, filename)
+        urllib.urlretrieve(permit.url, filepath)
+        return filepath
 
     def is_comment_open(self, date=datetime.date.today()):
         if not hasattr(self, "start_date") or not hasattr(self, "end_date"):
@@ -187,6 +194,14 @@ class Permit(tea_core.Document):
             url = "http://www.in.gov" + url
         return doc_type, url
 
+    def get_filename(self):
+        fileurl = self.url
+        original_filename = fileurl.split("/")[-1]
+        facility_name = self.facility.name[:50]  # occasionally these may be e.g. a verbose program description
+        prefix = self.date.isoformat() + "_" + self.county + "_" + facility_name
+        filename = prefix + "_" + original_filename
+        return filename
+
 
 def infer_program_from_url(url):
     url = url.lower()
@@ -206,6 +221,7 @@ class PermitUpdater:
     whether_download = True
     logtext = ""
     county = "Lake"
+    skip_existing = True
 
     def __init__(self):
         self.date = datetime.date.today()
@@ -213,6 +229,7 @@ class PermitUpdater:
         self.new = set()
         self.old = set()
         self.urldic = {}
+        self.files = self.update_file_list()
 
     def check_new_permits(self):  # return row data for new permits
         page = urllib2.urlopen(self.main_url).read()
@@ -312,20 +329,25 @@ class PermitUpdater:
         self.logtext = logtext
         return logtext
 
-    def download_new_permits(self, skip_existing=True):
+    def update_file_list(self):
+        self.files = set(os.listdir(permitdir))
+
+    def download_new_permits(self):
         if not self.whether_download:
             return False
-        files = set(os.listdir(permitdir))
+        self.files = set(os.listdir(permitdir))
         for permit in self.new:
-            fileurl = permit.url
-            filename = fileurl.split("/")[-1]
-            filename = self.date.isoformat() + "_" + permit.county + "_" + permit.facility.name + "_" + filename
-            if skip_existing:
-                if filename in files:
-                    continue
-            filepath = os.path.join(self.directory, filename)
-            urllib.urlretrieve(fileurl, filepath)
+            self.download_permit(permit)
         return True
+
+    def download_permit(self, permit):
+        filename = permit.get_filename()
+        if self.skip_existing:
+            if filename in self.files:
+                return
+        filepath = os.path.join(self.directory, filename)
+        urllib.urlretrieve(permit.url, filepath)
+        self.files.add(filename)
 
     def get_open_permits(self):
         open_permits = filter(lambda x: x.is_comment_open(date=self.date), self.current)
