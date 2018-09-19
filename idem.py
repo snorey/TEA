@@ -1576,10 +1576,7 @@ def do_cron():
     # second, compile local info
     collection = setup_collection()
     # third, generate and save JSON
-    today = datetime.date.today()
-    filename = "idem_%s.json" % today.isoformat()
-    filepath = os.path.join(idem_settings.maindir, filename)
-    save_active_sites_as_json(collection, lookback=7, filepath=filepath)
+    save_active_sites_as_json(collection, lookback=7)
     return collection
 
 
