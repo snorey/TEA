@@ -1573,7 +1573,7 @@ def save_active_sites_as_json(collection, lookback=7, filepath=None, also_save=T
 def do_cron():
     # first, cycle through VFC for new files
     do_cycle()
-    # second, compile local info
+    # second, compile local info and geodata
     collection = setup_collection()
     # third, generate and save JSON
     save_active_sites_as_json(collection, lookback=7)
