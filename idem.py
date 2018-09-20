@@ -877,15 +877,21 @@ class DocumentCollection(list):  # for a collection of documents either associat
 
 class FacilityCollection(list):
 
-    def __init__(self):
-        super(FacilityCollection, self).__init__()
+    def __init__(self, *args):
+        super(FacilityCollection, self).__init__(, *args)
         self.iddic = {}
         self.namedic = collections.defaultdict(list)
+        self.recalculate()
 
     @staticmethod
     def validate_addition(obj):
         if not isinstance(obj, Facility):
             raise TypeError
+
+    def recalculate(self):
+        self.remove_extras()
+        self.iddic = dict([(x.vfc_id, x) for x in self])
+        self.namedic = dict([(x.vfc_name, x) for x in self])
 
     def do_addition(self, obj):
         self.iddic[obj.vfc_id] = obj
@@ -902,6 +908,42 @@ class FacilityCollection(list):
         super(FacilityCollection, self).extend(iterable)
         for i in iterable:
             self.do_addition(i)
+
+    def __delitem__(self, key):
+        facility = self[key]
+        del self.iddic[facility.vfc_id]
+        if len(self.namedic[facility.vfc_name]) == 1:
+            del self.namedic[facility.vfc_name]
+        del self[key]
+
+    def remove_extras(self):
+        items = set(self)
+        for item in items:
+            self.remove_extra_item(item)
+
+    def remove_extra_item(self, item):
+        if self.count(item) > 1:
+            i = 0
+            count = 0
+            while i < len(self):
+                this_item = self[i]
+                if this_item == item:
+                    count += 1
+                    if count > 1:
+                        del self[i]
+                        continue  # do not increment, so as not to skip decremented next item
+                    else:
+                        i += 1
+                else:
+                    i += 1
+
+    def validate_item(self, obj):
+        if not isinstance(obj, Document):
+            return False
+        elif obj in self:
+            return False
+        else:
+            return True
 
 
 class ZipCollection(list):
