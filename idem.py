@@ -810,29 +810,67 @@ class ZipUpdater:
 
 
 class DocumentCollection(list):  # for a collection of documents either associated with one site or a geographic area.
-
+    """
+    Ordered ollection of unique VFC documents.
+    """
     def __init__(self, *args):
-        super(DocumentCollection, self).__init__(*args)
+        self.items = set()
         self.programs = set()
         self.types = set()
+        super(DocumentCollection, self).__init__(*args)
+        self.recalculate()
+        for item in self.items:
+            self.validate_item(item)
+            self.remove_extra(item)
 
-    @staticmethod
-    def validate_addition(obj):
+    def __delitem__(self, key):
+        del self[key]
+        self.recalculate()
+
+    def remove_extra(self, item):
+        if self.count(item) > 1:
+            i = 0
+            count = 0
+            while i < len(self):
+                this_item = self[i]
+                if this_item == item:
+                    count += 1
+                    if count > 1:
+                        del self[i]
+                        continue  # do not increment, so as not to skip decremented next item
+                    else:
+                        i += 1
+                else:
+                    i += 1
+
+    def recalculate(self):
+        self.items = set(self)
+        programs = set()
+        types = set()
+        for item in self.items:
+            programs.add(item.program)
+            types.add(item.type)
+
+    def validate_item(self, obj):
         if not isinstance(obj, Document):
-            raise TypeError
+            return False
+        elif obj in self.items:
+            return False
+        else:
+            return True
 
     def do_addition(self, obj):
         self.programs.add(obj.program)
         self.types.add(obj.type)
 
     def append(self, obj):
-        self.validate_addition(obj)
+        self.validate_item(obj)
         super(DocumentCollection, self).append(obj)
         self.do_addition(obj)
 
     def extend(self, iterable):
-        for i in iterable:
-            self.validate_addition(i)
+        iterable = [x for x in iterable if self.validate_item(x)]
+        super(DocumentCollection, self).extend(iterable)
         for i in iterable:
             self.do_addition(i)
 
@@ -1494,7 +1532,7 @@ def build_doc_list(facility, reference_date, cutoff=5):
     return doclist
 
 
-def facility_to_html(facility, reference_date=None):
+def facility_to_html(facility, reference_date=None, add_icons=False):
     if reference_date is None:
         reference_date = get_reference_date()
     url = facility.ecm_url
@@ -1502,15 +1540,60 @@ def facility_to_html(facility, reference_date=None):
     address = facility.full_address
     linkline = '<a href="%s" target="blank">%s</a>' % (url, name)
     description = address
+    lines = [linkline, description]
+    if add_icons is True:
+        icondic = {"DW": ("/drinking_water.png", "Drinking water"),
+                   "OAQ": ("/smokestack.png", "Air quality"),
+                   "UST": ("/Oil_drop.png", "Underground storage tank"),
+                   "LUST": ("/Oil_drop.png", "Leaking underground tank"),
+                   "HW Site": ("/oilbarrel.png", "Hazardous waste"),
+                   "OWQ Wastewater": ("/sewage.png", "Wastewater"),
+                   "CRTK": ("/lightbulb.png", "Right to know"),
+                   "DW Permits": ("/drinking_water.png", "Drinking water"),
+                   "ELTF": ("/money.png", "Excess liability trust fund"),
+                   "PCB": ("/skull.png", "PCBs"),
+                   "DW Ground Water": ("/drinking_water.png", "Drinking water"),
+                   "Contracts": ("/money.png", "Contracts"),
+                   "OLQ": ("/dumptruck.png", "Land quality"),
+                   "Septage": ("/sewage.png", "Septage"),
+                   "Biosolids": ("/sewage.png", "Biosolids"),
+                   "SRF": ("/money.png", "State revolving fund"),
+                   "State Cleanup": ("/backhoe.png", "State Cleanup"),
+                   "Storm Water Industrial": ("/sewage.png", "Storm Water Industrial"),
+                   "VRP": ("/backhoe.png", "Voluntary remediation program"),
+                   "DW Field Inspections": ("/drinking_water.png", "Drinking water"),
+                   "Brownfields": ("/backhoe.png", "Brownfields"),
+                   "Site Investigation": ("/investigation.png", "Site investigation"),
+                   "Superfund": ("/skull.png", "Superfund"),
+                   "OAQ Asbestos": ("/gasmask.png", "OAQ Asbestos"),
+                   "Storm Water Construction": ("/sewage.png", "Storm Water Construction"),
+                   "DW Compliance": ("/drinking_water.png", "Drinking water"),
+                   "Emergency Response": ("/skull.png", "Emergency Response"),
+                   "OAQ Air Monitoring": ("/smokestack.png", "Air monitoring"),
+                   "SW Facility": ("/dumptruck.png", "Solid waste facility"),
+                   }
+        iconline = '<p class="icon-line">%s</p>'
+        icons = ""
+        activity = get_docs_since(facility, reference_date)
+        programs = set([x.program for x in activity])
+        for program in programs:
+            if program not in icondic.keys():
+                print "Missing", program
+                continue
+            icondata = icondic[program]
+            icons += '<img src="%s" height="25px" alt="%s"/>&nbsp;' % tuple(icondata)
+        iconline = iconline % icons
+        lines.append(iconline)
     doclist = build_doc_list(facility, reference_date)
+    lines.append(doclist)
     popup = ""
-    for line in [linkline, description, doclist]:
+    for line in lines:
         popup += "<p>%s</p>\n" % line
     return popup
 
 
-def build_json_props(facility, reference_date):
-    popup = facility_to_html(facility, reference_date)
+def build_json_props(facility, reference_date=None):
+    popup = facility_to_html(facility, reference_date, add_icons=True)
     props = {
         "name": facility.vfc_name,
         "address": facility.vfc_address,
