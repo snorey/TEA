@@ -80,7 +80,11 @@ class Document:
 
     @property
     def filename(self):
-        attrs = (self.file_date.isoformat(), self.id, self.program, self.type)
+        if self.file_date:
+            date = self.file_date.isoformat()
+        else:
+            date = "UNDATED"
+        attrs = (date, self.id, self.program, self.type)
         filename = "%s_%s_%s_%s.pdf" % attrs
         filename = filename.replace("/", "_")
         return filename
