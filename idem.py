@@ -1487,16 +1487,22 @@ def get_page_patiently(url, session=None, timeout=TIMEOUT):
     return page
 
 
-def build_document_from_row(row, facility, crawl_date=None):
-    linkcatcher = re.search('href="(/cs/.+?[^\d](\d+)\.pdf)"', row)
+def get_doc_url_info(row):
+    needle = 'href="(/cs/.+?[^\d](\d+)\.pdf)"'
+    linkcatcher = re.search(needle, row)
     if linkcatcher:
         relative_url = linkcatcher.group(1)
-        url = "https://ecm.idem.in.gov" + relative_url
+        url = idem_settings.ecm_domain + relative_url
         fileid = linkcatcher.group(2)
     else:
         relative_url = ""
         url = ""
         fileid = ""
+    return url, fileid
+
+
+def build_document_from_row(row, facility, crawl_date=None):
+    url, fileid = get_doc_url_info(row)
     pieces = re.findall('nowrap="nowrap">(.+?)</div>', row)
     if len(pieces) != 5:
         print "Error!"
