@@ -685,7 +685,8 @@ class ZipUpdater:
         return page
 
     def build_start_url(self, resultcount=20):
-        starturl = "https://ecm.idem.in.gov/cs/idcplg?IdcService=GET_SEARCH_RESULTS"
+        starturl = idem_settings.ecm_domain
+        starturl += "/cs/idcplg?IdcService=GET_SEARCH_RESULTS"
         starturl += "&QueryText=xAIID+%3Ccontains%3E+`" + self.current_facility.vfc_id + "`"
         starturl += "&listTemplateId=SearchResultsIDEM&searchFormType=standard"
         starturl += "&SearchQueryFormat=UNIVERSAL&ftx=&AdvSearch=True&ResultCount="
@@ -1594,18 +1595,27 @@ def get_page_patiently(url, session=None, timeout=TIMEOUT):
     tries = 0
     page = ""
     while not done:
-        try:
-            handle = session.get(url, timeout=timeout)
-        except requests.exceptions.RequestException, e:
-            print str(e)
-            if tries > 5:
-                break
-            tries += 1
+        tries += 1
+        if tries > 5:
+            break
+        result = try_to_get_page(url, session, timeout)
+        if result is False:
             time.sleep(tries * TIMEOUT)
         else:
-            page = handle.text.encode('utf-8', 'ignore')
+            page = result
             done = True
     return page
+
+
+def try_to_get_page(url, session, timeout=TIMEOUT):
+    try:
+        handle = session.get(url, timeout=timeout)
+    except requests.exceptions.RequestException, e:
+        print str(e)
+        return False
+    else:
+        page = handle.text.encode('utf-8', 'ignore')
+        return page
 
 
 def get_doc_url_info(row):
@@ -1657,22 +1667,8 @@ def get_reference_date(lookback=7, today=None):
 def write_usable_json(json_obj, filepath=None):
     json_str = geojson.dumps(json_obj)
     json_str = "var features = " + json_str
-    if filepath is None:
-        return json_str
-    else:
-        open(filepath, "w").write(json_str)
-        return filepath
-
-
-def do_cycle(zips=lakezips):
-    cycler = ZipCycler(zips=zips)
-    cycler.cycle()
-
-
-def setup_collection(zips=lakezips):
-    collection = ZipCollection(zips=zips, whether_download=False)
-    collection.reload_latlongs()
-    return collection
+    result = save_or_return(json_str, filepath)
+    return result
 
 
 def get_json_filepath(date=None):
@@ -1696,12 +1692,21 @@ def save_active_sites_as_json(collection, lookback=7, filepath=None, also_save=T
     return result
 
 
+def do_cycle(zips=lakezips):
+    cycler = ZipCycler(zips=zips)
+    cycler.cycle()
+
+
+def setup_collection(zips=lakezips):
+    collection = ZipCollection(zips=zips, whether_download=False)
+    collection.reload_latlongs()
+    return collection
+
+
 def do_cron():
     # first, cycle through VFC for new files
     do_cycle()
-    # second, compile local info and geodata
     collection = setup_collection()
-    # third, generate and save JSON
     save_active_sites_as_json(collection, lookback=7)
     return collection
 
