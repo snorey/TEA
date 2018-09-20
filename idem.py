@@ -857,7 +857,7 @@ class DocumentCollection(list):
 
     def validate_item(self, obj):
         if not isinstance(obj, Document):
-            return False
+            raise TypeError
         elif obj in self.items:
             return False
         else:
@@ -868,9 +868,10 @@ class DocumentCollection(list):
         self.types.add(obj.type)
 
     def append(self, obj):
-        self.validate_item(obj)
-        super(DocumentCollection, self).append(obj)
-        self.do_addition(obj)
+        result = self.validate_item(obj)
+        if result is True:
+            super(DocumentCollection, self).append(obj)
+            self.do_addition(obj)
 
     def extend(self, iterable):
         iterable = [x for x in iterable if self.validate_item(x)]
