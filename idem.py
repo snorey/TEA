@@ -878,48 +878,44 @@ class DocumentCollection(list):  # for a collection of documents either associat
 class FacilityCollection(list):
 
     def __init__(self, *args):
-        super(FacilityCollection, self).__init__(, *args)
+        super(FacilityCollection, self).__init__(*args)
         self.iddic = {}
         self.namedic = collections.defaultdict(list)
         self.recalculate()
 
-    @staticmethod
-    def validate_addition(obj):
+    def validate_item(self, obj):
         if not isinstance(obj, Facility):
-            raise TypeError
+            return False
+        elif obj in self:
+            return False
+        else:
+            return True
 
     def recalculate(self):
         self.remove_extras()
         self.iddic = dict([(x.vfc_id, x) for x in self])
-        self.namedic = dict([(x.vfc_name, x) for x in self])
+        self.namedic = collections.defaultdict(list)
+        for facility in self:
+            self.namedic[facility.vfc_name].append(facility)
 
     def do_addition(self, obj):
         self.iddic[obj.vfc_id] = obj
         self.namedic[obj.vfc_name].append(obj)
 
     def append(self, obj):
-        self.validate_addition(obj)
-        super(FacilityCollection, self).append(obj)
-        self.do_addition(obj)
+        if self.validate_item(obj):
+            super(FacilityCollection, self).append(obj)
+            self.do_addition(obj)
 
     def extend(self, iterable):
-        for i in iterable:
-            self.validate_addition(i)
+        iterable = [x for x in iterable if self.validate_item(x)]
         super(FacilityCollection, self).extend(iterable)
         for i in iterable:
             self.do_addition(i)
 
     def __delitem__(self, key):
-        facility = self[key]
-        del self.iddic[facility.vfc_id]
-        if len(self.namedic[facility.vfc_name]) == 1:
-            del self.namedic[facility.vfc_name]
-        del self[key]
-
-    def remove_extras(self):
-        items = set(self)
-        for item in items:
-            self.remove_extra_item(item)
+        super(FacilityCollection, self).__delitem__(key)
+        self.recalculate()
 
     def remove_extra_item(self, item):
         if self.count(item) > 1:
@@ -937,13 +933,10 @@ class FacilityCollection(list):
                 else:
                     i += 1
 
-    def validate_item(self, obj):
-        if not isinstance(obj, Document):
-            return False
-        elif obj in self:
-            return False
-        else:
-            return True
+    def remove_extras(self):
+        items = set(self)
+        for item in items:
+            self.remove_extra_item(item)
 
 
 class ZipCollection(list):
