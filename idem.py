@@ -828,7 +828,7 @@ class DocumentCollection(list):
             self.remove_extra(item)
 
     def __delitem__(self, key):
-        del self[key]
+        super(DocumentCollection, self).__delitem__(key)
         self.recalculate()
 
     def remove_extra(self, item):
