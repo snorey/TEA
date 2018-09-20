@@ -35,6 +35,7 @@ class Fetcher:
                 "EndDate": ""}
         self.page = self.session.post(self.url, data=data).text.encode("utf-8", "ignore")
         pieces = self.break_page_into_pieces()
+        pieces = set(pieces)
         self.pieces = pieces
         return pieces
 
@@ -132,7 +133,7 @@ class Notice(tea_core.Document):
             self.process_input(from_input)
 
     def process_input(self, content):
-        domain = "http://in.mypublicnotices.com"
+        domain = idem_settings.notices_domain
         self.content = content
         link = get_first_link_in_text(content)
         self.url = domain + link
@@ -144,12 +145,16 @@ class Notice(tea_core.Document):
             self.title = content.split('<img')[0]
             self.body = content
         self.get_newspaper_info(content=content)
-        worthy_words = ["HEARING", "MEETING"]
-        if any([x in self.title for x in worthy_words]):
-            self.interesting = True
+        self.check_if_interesting()
         if self.interesting is True:
             # do something
             pass
+
+    def check_if_interesting(self):
+        worthy_words = ["HEARING", "MEETING"]
+        if any([x in self.title.upper() for x in worthy_words]):
+            if x.content.upper().count("COURT") <= 1:  # filter out summonses by publication etc.
+                self.interesting = True
 
     def get_newspaper_info(self, content):
         if "Appeared in:" in content:
