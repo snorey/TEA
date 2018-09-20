@@ -35,619 +35,92 @@ latlong_filepath = os.path.join(idem_settings.maindir, "facilitydump.txt")
 latest_json_path = os.path.join(idem_settings.websitedir, "latest_vfc.json")
 
 
-class DocumentCollection(list): # for a collection of documents either associated with one site or a geographic area.
+class Document:
+    url = ""
+    crawl_date = None
+    file_date = None
+    id = ""
+    type = ""
+    program = ""
+    facility = None
+    path = ""
+    row = ()
+    size = 0
+    session = None
 
-    def __init__(self, *args):
-        super(DocumentCollection, self).__init__(*args)
-        self.programs = set()
-        self.types = set()
+    def __init__(self,
+                 row=None,
+                 build=False,
+                 **kwargs):
+        if row is not None and build is not False:
+            self.row = row
+            self.from_oldstyle_row(row)
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
 
-    @staticmethod
-    def validate_addition(object):
-        if not isinstance(object, Document):
-            raise TypeError
-
-    def do_addition(self, object):
-        self.programs.add(object.program)
-        self.types.add(object.type)
-
-    def append(self, object):
-        self.validate_addition(object)
-        super(DocumentCollection, self).append(object)
-        self.do_addition(object)
-
-    def extend(self, iterable):
-        for i in iterable:
-            self.validate_addition(i)
-        super(DocumentCollection, self).extend(iterable)
-        for i in iterable:
-            self.do_addition(i)
-
-
-class FacilityCollection(list):
-
-    def __init__(self):
-        super(FacilityCollection, self).__init__()
-        self.iddic = {}
-        self.namedic = collections.defaultdict(list)
-
-    @staticmethod
-    def validate_addition(object):
-        if not isinstance(object, Facility):
-            raise TypeError
-
-    def do_addition(self, object):
-        self.iddic[object.vfc_id] = object
-        self.namedic[object.vfc_name].append(object)
-
-    def append(self, object):
-        self.validate_addition(object)
-        super(FacilityCollection, self).append(object)
-        self.do_addition(object)
-
-    def extend(self, iterable):
-        for i in iterable:
-            self.validate_addition(i)
-        super(FacilityCollection, self).extend(iterable)
-        for i in iterable:
-            self.do_addition(i)
-
-
-class ZipCollection(list):
-    html = ""
-    update_all = False
-    worry_about_crawl_date = True
-    restart = False
-
-    def __init__(self, zips=lakezips, offline=False, **kwargs):
-        super(ZipCollection, self).__init__()
-        self.date = datetime.date.today()
-        self.facilities = set()
-        self.iddic = {}
-        self.namedic = collections.defaultdict(list)
-        self.zips = zips
-        self.offline = offline
-        for zipcode in zips:
-            print zipcode
-            self.setup_updater(zipcode, kwargs)
-
-    def setup_updater(self, zipcode, kwargs):
-        updater = ZipUpdater(zipcode, **kwargs)
-        if self.offline:
-            updater.go_offline()
+    def __eq__(self, other):
+        if self.filename:
+            return self.filename == other.filename
         else:
-            updater.whether_update_zip_info = (self.date.day % 7 == int(zipcode) % 7)  # to prevent bunching up
-            updater.whether_download = zipcode in downloadzips
-        for facility in updater.facilities:
-            self.add_facility(facility)
-        self.append(updater)
+            return hash(self) == hash(other)
 
-    def add_facility(self, facility):
-        self.facilities.add(facility)
-        self.iddic[facility.vfc_id] = facility
-        self.namedic[facility.vfc_name].append(facility)
+    def __lt__(self, other):
+        return self.file_date < other.file_date
 
-    def go(self, restart=False):
-        if restart:
-            self.restart = restart
-        for updater in self:
-            self.run_updater(updater)
+    def __hash__(self):
+        return hash(self.identity)
 
-    def run_updater(self, updater):
-        if self.restart:
-            if updater.zip == self.restart:
-                self.restart = False
+    @property
+    def identity(self):
+        if self.filename:
+            return self.filename
+        else:
+            return self.id, self.facility
+
+    @property
+    def filename(self):
+        attrs = (self.file_date.isoformat(), self.id, self.program, self.type)
+        filename = "%s_%s_%s_%s.pdf" % attrs
+        filename = filename.replace("/", "_")
+        return filename
+
+    @property
+    def latest_date(self):
+        if self.file_date and self.crawl_date:
+            return max(self.file_date, self.crawl_date)
+        elif self.file_date:
+            return self.file_date
+        else:
+            return self.crawl_date
+
+    def from_oldstyle_row(self, row):
+        relative_url, self.id, month, date, year, self.program, self.type, self.size = row
+        self.file_date = datetime.date(int(year), int(month), int(date))
+        domain = "https://ecm.idem.in.gov"
+        self.url = domain + relative_url
+
+    def retrieve_file_patiently(self, maxtries=10):
+        done = False
+        inc = 0
+        while not done:
+            inc += 1
+            if inc > maxtries:
+                print "Aborting!"
+                return False
+            try:
+                response = self.session.get(self.url, stream=True)
+                with open(self.path, 'wb') as out_file:
+                    shutil.copyfileobj(response.raw, out_file)
+            except Exception, e:
+                print str(e)
+                time.sleep(30)
             else:
-                return
-        print "***%s***" % updater.zip
-        updater.do_zip()
-
-    def find_by_name(self, searchterm):
-        searchterm = searchterm.upper()
-        matches = filter(lambda x: searchterm in x, self.namedic.keys())
-        found = []
-        for m in matches:
-            found.extend(self.namedic[m])
-        return found
-
-    def get_facilities_within(self, point, maxdistance):
-        facilities_in_range = []
-        for facility in self.facilities:
-            if not hasattr(facility, "latlong"):
-                continue
-            elif facility.latlong is False:
-                continue
-            else:
-                distance = get_distance(point, facility.latlong)
-                if distance <= maxdistance:
-                    facilities_in_range.append((distance, facility))
-        facilities_in_range.sort()
-        facilities = [x[1] for x in facilities_in_range]
-        return facilities
-
-    def dump_latlongs(self, filepath=latlong_filepath):
-        output = ""
-        for facility in self.facilities:
-            line = self.generate_facility_line(facility)
-            output += line + "\n"
-        open(filepath, "w").write(output)
-
-    def generate_facility_line(self, facility):
-        facility_id = facility.vfc_id
-        name = facility.vfc_name
-        address = facility.google_address
-        lat, lon = self.stringify_latlong(facility.latlong)
-        data = [facility_id, name, lat, lon, address]
-        line = "\t".join(data)
-        return line
-
-    @staticmethod
-    def stringify_latlong(latlong):
-        """
-        Take latlong (tuple or False) and return as pair of strings
-        :param latlong: tuple
-        :return: str
-        """
-        if type(latlong) == tuple:
-            lat = str(latlong[0])
-            lon = str(latlong[1])
-        else:  # e.g. if False
-            lat = ""
-            lon = ""
-        return lat, lon
-
-    def reload_latlongs(self, filepath=latlong_filepath):
-        for line in open(filepath):
-            if not line.strip() or "\t" not in line:
-                continue
-            self.assign_geodata_from_line(line)
-
-    def assign_geodata_from_line(self, line):
-        facility_id, name, latlong, address = process_location_line(line)
-        facility = self.iddic[facility_id]
-        facility.latlong = latlong
-        facility.google_address = address
-        return facility
-
-    def get_all_docs_in_range(self, start_date, end_date):
-        docs_in_range = {}
-        for facility in self.facilities:
-            in_range = [x for x in facility.docs if end_date >= x.file_date >= start_date]
-            if in_range:
-                docs_in_range[facility] = in_range
-        return docs_in_range
-
-    def get_active_facilities(self, lookback_days=7):
-        cutoff_date = get_reference_date(lookback_days)
-        active_facilities = self.get_active_since(cutoff_date)
-        return active_facilities
-
-    def get_active_since(self, cutoff_date):
-        active_facilities = []
-        for facility in self.facilities:
-            if facility.is_active_since(cutoff_date):
-                active_facilities.append(facility)
-        return active_facilities
-
-    def get_facilities_due_for_look(self):
-        to_do = []
-        for facility in self.facilities:
-            if facility.whether_to_update:
-                to_do.append(facility)
-        return to_do
-
-    def latlongify(self):
-        for facility in self.facilities:
-            if not facility.latlong:
-                facility.latlongify()
-
-    def catchup_downloads(self):
-        for facility in self.facilities:
-            self.catchup_facility(facility)
-
-    @staticmethod
-    def catchup_facility(facility):
-        facility.get_downloaded_docs()
-        if facility.due_for_download is True:
-            print facility.vfc_name, facility.directory, facility.full_address
-            facility.download()
-            time.sleep(tea_core.DEFAULT_SHORT_WAIT)
-
-
-class ZipCycler:
-
-    def __init__(self, zips=lakezips):
-        self.zips = zips
-        self.new = []
-        self.updated = []
-        self.iddic = {}
-        self.ids = set()
-
-    def cycle(self, do_all=False):
-        for current_zip in self.zips:  # avoid holding multiple updaters in memory
-            updater = ZipUpdater(current_zip)
-            print current_zip, len(updater.facilities)
-            for facility in updater.facilities:
-                if do_all or facility.whether_to_update:
-                    self.update_facility(facility)
-        return self.new
-
-    def update_facility(self, facility):
-        new_files = facility.check_for_new_docs()
-        print facility.vfc_name, len(new_files)
-        if new_files:
-            self.new.append(new_files)
-            self.updated.append(facility)
-
-    def latlongify_updated(self, filepath=latlong_filepath):
-        self.iddic = dict([(x.vfc_id, x) for x in self.updated])
-        self.ids = set(self.iddic.keys())
-        for line in open(filepath):
-            self.latlongify_facility_from_line(line)
-
-    def latlongify_facility_from_line(self, line):
-        data = process_location_line(line)
-        if data is None:
-            return
-        else:
-            self.assign_geodata(data)
-
-    def assign_geodata(self, data):
-        facility_id, name, latlong, address = data
-        if facility_id in self.ids:
-            facility = self.iddic[facility_id]
-            facility.latlong = latlong
-            facility.google_address = address
-
-
-def process_location_line(line):
-    idcol = 0
-    namecol = 1
-    latcol = 2
-    loncol = 3
-    addcol = 4
-    if not line.strip() or "\t" not in line:
-        return
-    pieces = line.split("\t")
-    facility_id = pieces[idcol]
-    latstring = pieces[latcol]
-    lonstring = pieces[loncol]
-    name = pieces[namecol]
-    address = pieces[addcol].strip()  # avoid trailing newline
-    latlong = destring_latlong(latstring, lonstring)
-    return facility_id, name, latlong, address
-
-
-def get_location_data(filepath=latlong_filepath):
-    data = []
-    for line in open(filepath):
-        linedata = process_location_line(line)
-        data.append(linedata)
-    return data
-
-
-def destring_latlong(latstring, lonstring):
-    if not latstring or not lonstring:
-        latlong = False
-    else:
-        lat = float(latstring)
-        lon = float(lonstring)
-        latlong = (lat, lon)
-    return latlong
-
-
-class ZipUpdater:
-
-    def __init__(self, zipcode, **arguments):
-        self.zip = zipcode
-        self.html = ""
-        self.whether_download = True
-        self.whether_update_zip_info = True
-        self.whether_update_facility_info = True
-        self.worry_about_crawl_date = True
-        self.offline = False
-        self.firsttime = True
-        self.directory = os.path.join(maindir, zipcode)
-        self.date = datetime.date.today()
-        self.zipurl = build_zip_url(zipcode)
-        try:
-            os.mkdir(self.directory)
-        except OSError:  # directory exists
-            pass
-        tea_core.assign_values(self, arguments, tolerant=True)
-        self.page = get_latest_zip_page(self.zip, zipdir=self.directory)
-        self.facilities = self.get_facilities_from_page(self.page)
-        self.siteids = [(x.vfc_id, x) for x in self.facilities]
-        self.sites_by_siteid = dict(self.siteids)
-        self.session = requests.Session()
-        self.current_facility = None
-        self.updated_facilities = []
-        self.logtext = ""
-
-    def go_offline(self):
-        self.whether_download = False
-        self.whether_update_zip_info = False
-        self.whether_update_facility_info = False
-        self.offline = True
-
-    def do_zip(self):
-        if self.whether_update_zip_info is True:
-            self.update_info()
-        self.get_updated_facilities()
-        self.log_updates_ecm()
-
-    def update_info(self):
-        print "Updating ZIP info"
-        self.retrieve_zip_page()
-        self.facilities = self.get_facilities_from_page(self.page)
-        self.sites_by_siteid = dict(map(lambda x: (x.vfc_id, x), self.facilities))
-
-    def get_active_sites(self, lookback=7):
-        sincedate = get_reference_date(lookback)
-        sitelist = self.facilities
-        active_sites = get_sites_with_activity(sitelist, sincedate)
-        return active_sites
-
-    def retrieve_zip_page(self):
-        zippage = get_page_patiently(self.zipurl, session=self.session)
-        if self.need_to_get_second_page(zippage):
-            nextpage = self.retrieve_second_page()
-            zippage += nextpage
-        self.save_zip_page(zippage)
-        return zippage
-
-    @staticmethod
-    def need_to_get_second_page(zippage):
-        matchme = "Displaying Facilities 1 - (\d+) of (\d+)"
-        matched = re.search(matchme, zippage)
-        if matched:
-            thispagecount, totalcount = matched.group(1), matched.group(2)
-            if int(thispagecount) < int(totalcount):
-                return True
-        return False
-
-    def save_zip_page(self, zippage):
-        zipfilename = str(self.zip) + "_" + self.date.isoformat() + ".html"
-        zippagepath = os.path.join(self.directory, zipfilename)
-        open(zippagepath, "w").write(zippage)
-        self.page = zippage
-        return zippage
-
-    def retrieve_second_page(self):
-        print "fetching page 2..."  # nothing currently gets close to page 3
-        nexturl = self.zipurl + "&PageNumber=2"
-        nextpage = get_page_patiently(nexturl, session=self.session)
-        return nextpage
-
-    def refresh_siteids(self):
-        siteids = sorted(self.sites_by_siteid.keys())
-        self.siteids = siteids
-        return siteids
-
-    def get_updated_facilities(self):
-        self.refresh_siteids()
-        self.updated_facilities = []
-        for site_id in self.siteids:
-            self.handle_facility(site_id)
-        return self.updated_facilities
-
-    def handle_facility(self, site_id):
-        facility = self.sites_by_siteid[site_id]
-        self.current_facility = facility
-        if self.whether_update_facility(facility):
-            self.update_facility(facility)
-
-    def update_facility(self, facility):
-        self.show_progress(facility.vfc_id)
-        self.fetch_facility_docs()
-        time.sleep(tea_core.DEFAULT_SHORT_WAIT)
-        if facility.updated_docs:
-            print len(facility.updated_docs)
-            self.updated_facilities.append(facility)
-            if self.whether_download is True:
-                time.sleep(tea_core.DEFAULT_WAIT)
-
-    def show_progress(self, site_id):
-        progress = "%d/%d" % (self.siteids.index(site_id) + 1, len(self.siteids))
-        print self.current_facility.vfc_name, self.current_facility.vfc_id, progress
-
-    def whether_update_facility(self, facility):  # todo: harmonize with facility.whether_to_update()
-        should_update = True
-        sincecheck = since_last_scan(facility.directory)
-        sincenewfile = since_last_file(facility.directory, download=self.whether_download)
-        if self.firsttime is False and self.whether_update_facility_info is True:  # if no updating no need to skimp
-            should_update = self.whether_updatable_by_dates(sincecheck, sincenewfile)
-        return should_update
-
-    @staticmethod
-    def whether_updatable_by_dates(sincecheck, sincenewfile):
-        if sincecheck < 1:
-            should_update = False
-        elif sincenewfile > 60 and sincecheck < 3:  # somewhat arbitrary numbers here
-            should_update = False
-        elif sincenewfile > 365 and sincecheck < 10:
-            should_update = False
-        elif sincenewfile > 1500 and sincecheck < 30:
-            should_update = False
-        else:
-            should_update = True
-        return should_update
-
-    def log_updates_ecm(self):
-        directory = self.directory
-        date = self.date
-        filename = "updates_%s_%s.txt" % (self.zip, date.isoformat())
-        filepath = os.path.join(directory, filename)
-        self.logtext = self.build_facility_log()
-        if self.logtext:
-            writefile = open(filepath, "a")
-            with writefile:
-                writefile.write(self.logtext)
-
-    def build_facility_log(self):
-        text = ""
-        for facility in self.updated_facilities:
-            for newfile in facility.updated_docs:
-                newline = "%s\t%s\t%s\t%s\t%s\n" % (
-                    newfile.file_date.isoformat(),
-                    facility.vfc_id,
-                    facility.vfc_name,
-                    newfile.filename,
-                    newfile.url)
-                text += newline
-        return text
-
-    def reconstruct_site_list(self):
-        self.page = get_latest_zip_page(self.zip, zipdir=self.directory)
-        sites_from_page = self.get_facilities_from_page(self.page)
-        siteids = dict(map(lambda x: (x.vfc_id, x), sites_from_page))
-        self.sites_by_siteid = siteids
-        return siteids
-
-    def get_downloaded_docs(self):
-        already = self.current_facility.get_downloaded_docs()
-        return already
-
-    def fetch_facility_docs(self):
-        if self.whether_update_facility_info is True:
-            page = self.retrieve_facility_page()
-        else:
-            page = self.current_facility.get_latest_page()
-        self.current_facility.page = page
-        self.current_facility.updated_docs |= self.fetch_files_for_current_facility()
-        return self.current_facility.updated_docs
-
-    def retrieve_facility_page(self):
-        starturl = self.current_facility.ecm_url
-        page = get_page_patiently(starturl, session=self.session)
-        self.current_facility.page = page
-        pagefilename = self.current_facility.vfc_id + "_" + self.date.isoformat()
-        pagepath = os.path.join(self.current_facility.directory, pagefilename)
-        open(pagepath, "w").write(page)
-        return page
-
-    def build_start_url(self, resultcount=20):
-        starturl = "https://ecm.idem.in.gov/cs/idcplg?IdcService=GET_SEARCH_RESULTS"
-        starturl += "&QueryText=xAIID+%3Ccontains%3E+`" + self.current_facility.vfc_id + "`"
-        starturl += "&listTemplateId=SearchResultsIDEM&searchFormType=standard"
-        starturl += "&SearchQueryFormat=UNIVERSAL&ftx=&AdvSearch=True&ResultCount="
-        starturl += str(resultcount) + "&SortField=dInDate&SortOrder=Desc"
-        return starturl
-
-    def check_and_make_facility_directory(self):
-        self.current_facility.directory = os.path.join(self.directory, self.current_facility.vfc_id)
-        try:
-            os.mkdir(self.current_facility.directory)
-        except OSError:
-            pass
-        else:
-            self.firsttime = True  # if directory not created, we know it hasn't been checked before
-        return self.current_facility.directory
-
-    def get_updated_files_without_downloading(self):
-        def date_filter(filename):
-            is_previous = False
-            prefix = self.current_facility.vfc_id + "_"
-            if filename.startswith(prefix) and re.search("\d\d\d\d-\d\d-\d\d", filename):
-                is_previous = True
-            return is_previous
-        directory = self.directory
-        files = os.listdir(directory)
-        previous = filter(date_filter, files)
-        if previous:
-            dates = [(re.search("\d\d\d\d-\d\d-\d\d", x).group(0).split("-"), x) for x in previous]
-            dates.sort()
-            foundpath = os.path.join(directory, dates[-1][-1])
-            yesterfiles = self.current_facility.docs_from_page(open(foundpath).read())
-            todayfiles = self.current_facility.docs_from_page(self.current_facility.page)
-            updated = todayfiles - yesterfiles
-        else:
-            print "New facility!"
-            updated = self.current_facility.docs_from_page(self.current_facility.page)
-        return updated
-
-    def fetch_all_files_for_facility(self):
-        allfiles = set()
-        if not self.current_facility.page:
-            self.current_facility.page = self.retrieve_facility_page()
-        needle = "javascript:addQueryFilter\('xIDEMDocumentType', '([\w\s]+)'\)"
-        rawtypes = re.findall(needle, self.current_facility.page)
-        types = map(lambda x: x.replace(" ", "%20"), rawtypes)
-        print str(types)
-        for t in types:
-            morefiles = self.fetch_type_files(t)
-            allfiles |= morefiles
-            print len(morefiles), len(allfiles)
-            time.sleep(tea_core.DEFAULT_WAIT)
-        return allfiles
-
-    def fetch_type_files(self, filetype):
-        print "***%s***" % filetype
-        url = generate_type_url(self.current_facility.vfc_id, filetype)
-        page = get_page_patiently(url, session=self.session)
-        self.current_facility.page += page
-        morefiles = self.fetch_files_for_current_facility()
-        return morefiles
-
-    def fetch_files_for_current_facility(self):
-        newfiles = self.current_facility.download()
-        return newfiles
-
-    def scan_zip_for_premature(self):
-        sitedirs = filter(lambda x: os.path.isdir(os.path.join(self.directory, x)), os.listdir(self.directory))
-        for siteid in sitedirs:
-            if siteid not in self.sites_by_siteid.keys():
-                print "%s not in keys!" % siteid
-                continue
-            self.current_facility = self.sites_by_siteid[siteid]
-            sitedir = os.path.join(self.directory, siteid)
-            if scan_for_premature_stops(sitedir):
-                self.get_downloaded_docs()
-                total = get_latest_total(sitedir)
-                if total > 500:
-                    self.fetch_all_files_for_facility()
-                else:
-                    self.fetch_files_for_current_facility()
+                del response
+                done = True
+                print "Download complete"
+                time.sleep(3)
         return True
-
-    def scan_site_for_premature(self, siteid):
-        if siteid not in self.sites_by_siteid.keys():
-            print "%s not in keys!" % siteid
-            return
-        self.current_facility = self.sites_by_siteid[siteid]
-        sitedir = os.path.join(self.directory, siteid)
-        whether_premature = scan_for_premature_stops(sitedir)
-        if whether_premature:
-            self.get_downloaded_docs()
-            total = get_latest_total(sitedir)
-            if total > 500:
-                self.fetch_all_files_for_facility()
-            else:
-                self.fetch_files_for_current_facility()
-
-    def get_facility_from_row(self, row):
-        facility = Facility(row=row, parent=self, worry_about_crawl_date=self.worry_about_crawl_date)
-        return facility
-
-    @staticmethod
-    def get_valid_rows_from_page(page):
-        rows = page.split("<tr>")[1:]
-        rows = [x for x in rows if "span class=idemfs" in x]
-        rows = [x for x in rows if "xAIID<matches>" in x]
-        return rows
-
-    def get_facilities_from_page(self, page=None):
-        if page is None:
-            page = self.page
-        rows = self.get_valid_rows_from_page(page)
-        facilities = map(self.get_facility_from_row, rows)
-        return facilities
-
-    def latlongify(self):
-        for facility in self.facilities:
-            if not facility.latlong:
-                facility.latlongify()
-            time.sleep(tea_core.DEFAULT_SHORT_WAIT)
 
 
 class Facility:  # data structure
@@ -1021,92 +494,618 @@ class Facility:  # data structure
         return should_update
 
 
-class Document:
-    url = ""
-    crawl_date = None
-    file_date = None
-    id = ""
-    type = ""
-    program = ""
-    facility = None
-    path = ""
-    row = ()
-    size = 0
-    session = None
+class ZipUpdater:
 
-    def __init__(self,
-                 row=None,
-                 build=False,
-                 **kwargs):
-        if row is not None and build is not False:
-            self.row = row
-            self.from_oldstyle_row(row)
-        for key, value in kwargs.items():
-            if hasattr(self, key):
-                setattr(self, key, value)
+    def __init__(self, zipcode, **arguments):
+        self.zip = zipcode
+        self.html = ""
+        self.whether_download = True
+        self.whether_update_zip_info = True
+        self.whether_update_facility_info = True
+        self.worry_about_crawl_date = True
+        self.offline = False
+        self.firsttime = True
+        self.directory = os.path.join(maindir, zipcode)
+        self.date = datetime.date.today()
+        self.zipurl = build_zip_url(zipcode)
+        try:
+            os.mkdir(self.directory)
+        except OSError:  # directory exists
+            pass
+        tea_core.assign_values(self, arguments, tolerant=True)
+        self.page = get_latest_zip_page(self.zip, zipdir=self.directory)
+        self.facilities = self.get_facilities_from_page(self.page)
+        self.siteids = [(x.vfc_id, x) for x in self.facilities]
+        self.sites_by_siteid = dict(self.siteids)
+        self.session = requests.Session()
+        self.current_facility = None
+        self.updated_facilities = []
+        self.logtext = ""
 
-    def __eq__(self, other):
-        if self.filename:
-            return self.filename == other.filename
+    def go_offline(self):
+        self.whether_download = False
+        self.whether_update_zip_info = False
+        self.whether_update_facility_info = False
+        self.offline = True
+
+    def do_zip(self):
+        if self.whether_update_zip_info is True:
+            self.update_info()
+        self.get_updated_facilities()
+        self.log_updates_ecm()
+
+    def update_info(self):
+        print "Updating ZIP info"
+        self.retrieve_zip_page()
+        self.facilities = self.get_facilities_from_page(self.page)
+        self.sites_by_siteid = dict(map(lambda x: (x.vfc_id, x), self.facilities))
+
+    def get_active_sites(self, lookback=7):
+        sincedate = get_reference_date(lookback)
+        sitelist = self.facilities
+        active_sites = get_sites_with_activity(sitelist, sincedate)
+        return active_sites
+
+    def retrieve_zip_page(self):
+        zippage = get_page_patiently(self.zipurl, session=self.session)
+        if self.need_to_get_second_page(zippage):
+            nextpage = self.retrieve_second_page()
+            zippage += nextpage
+        self.save_zip_page(zippage)
+        return zippage
+
+    @staticmethod
+    def need_to_get_second_page(zippage):
+        matchme = "Displaying Facilities 1 - (\d+) of (\d+)"
+        matched = re.search(matchme, zippage)
+        if matched:
+            thispagecount, totalcount = matched.group(1), matched.group(2)
+            if int(thispagecount) < int(totalcount):
+                return True
+        return False
+
+    def save_zip_page(self, zippage):
+        zipfilename = str(self.zip) + "_" + self.date.isoformat() + ".html"
+        zippagepath = os.path.join(self.directory, zipfilename)
+        open(zippagepath, "w").write(zippage)
+        self.page = zippage
+        return zippage
+
+    def retrieve_second_page(self):
+        print "fetching page 2..."  # nothing currently gets close to page 3
+        nexturl = self.zipurl + "&PageNumber=2"
+        nextpage = get_page_patiently(nexturl, session=self.session)
+        return nextpage
+
+    def refresh_siteids(self):
+        siteids = sorted(self.sites_by_siteid.keys())
+        self.siteids = siteids
+        return siteids
+
+    def get_updated_facilities(self):
+        self.refresh_siteids()
+        self.updated_facilities = []
+        for site_id in self.siteids:
+            self.handle_facility(site_id)
+        return self.updated_facilities
+
+    def handle_facility(self, site_id):
+        facility = self.sites_by_siteid[site_id]
+        self.current_facility = facility
+        if self.whether_update_facility(facility):
+            self.update_facility(facility)
+
+    def update_facility(self, facility):
+        self.show_progress(facility.vfc_id)
+        self.fetch_facility_docs()
+        time.sleep(tea_core.DEFAULT_SHORT_WAIT)
+        if facility.updated_docs:
+            print len(facility.updated_docs)
+            self.updated_facilities.append(facility)
+            if self.whether_download is True:
+                time.sleep(tea_core.DEFAULT_WAIT)
+
+    def show_progress(self, site_id):
+        progress = "%d/%d" % (self.siteids.index(site_id) + 1, len(self.siteids))
+        print self.current_facility.vfc_name, self.current_facility.vfc_id, progress
+
+    def whether_update_facility(self, facility):  # todo: harmonize with facility.whether_to_update()
+        should_update = True
+        sincecheck = since_last_scan(facility.directory)
+        sincenewfile = since_last_file(facility.directory, download=self.whether_download)
+        if self.firsttime is False and self.whether_update_facility_info is True:  # if no updating no need to skimp
+            should_update = self.whether_updatable_by_dates(sincecheck, sincenewfile)
+        return should_update
+
+    @staticmethod
+    def whether_updatable_by_dates(sincecheck, sincenewfile):
+        if sincecheck < 1:
+            should_update = False
+        elif sincenewfile > 60 and sincecheck < 3:  # somewhat arbitrary numbers here
+            should_update = False
+        elif sincenewfile > 365 and sincecheck < 10:
+            should_update = False
+        elif sincenewfile > 1500 and sincecheck < 30:
+            should_update = False
         else:
-            return hash(self) == hash(other)
+            should_update = True
+        return should_update
 
-    def __lt__(self, other):
-        return self.file_date < other.file_date
+    def log_updates_ecm(self):
+        directory = self.directory
+        date = self.date
+        filename = "updates_%s_%s.txt" % (self.zip, date.isoformat())
+        filepath = os.path.join(directory, filename)
+        self.logtext = self.build_facility_log()
+        if self.logtext:
+            writefile = open(filepath, "a")
+            with writefile:
+                writefile.write(self.logtext)
 
-    def __hash__(self):
-        return hash(self.identity)
+    def build_facility_log(self):
+        text = ""
+        for facility in self.updated_facilities:
+            for newfile in facility.updated_docs:
+                newline = "%s\t%s\t%s\t%s\t%s\n" % (
+                    newfile.file_date.isoformat(),
+                    facility.vfc_id,
+                    facility.vfc_name,
+                    newfile.filename,
+                    newfile.url)
+                text += newline
+        return text
 
-    @property
-    def identity(self):
-        if self.filename:
-            return self.filename
+    def reconstruct_site_list(self):
+        self.page = get_latest_zip_page(self.zip, zipdir=self.directory)
+        sites_from_page = self.get_facilities_from_page(self.page)
+        siteids = dict(map(lambda x: (x.vfc_id, x), sites_from_page))
+        self.sites_by_siteid = siteids
+        return siteids
+
+    def get_downloaded_docs(self):
+        already = self.current_facility.get_downloaded_docs()
+        return already
+
+    def fetch_facility_docs(self):
+        if self.whether_update_facility_info is True:
+            page = self.retrieve_facility_page()
         else:
-            return self.id, self.facility
+            page = self.current_facility.get_latest_page()
+        self.current_facility.page = page
+        self.current_facility.updated_docs |= self.fetch_files_for_current_facility()
+        return self.current_facility.updated_docs
 
-    @property
-    def filename(self):
-        attrs = (self.file_date.isoformat(), self.id, self.program, self.type)
-        filename = "%s_%s_%s_%s.pdf" % attrs
-        filename = filename.replace("/", "_")
-        return filename
+    def retrieve_facility_page(self):
+        starturl = self.current_facility.ecm_url
+        page = get_page_patiently(starturl, session=self.session)
+        self.current_facility.page = page
+        pagefilename = self.current_facility.vfc_id + "_" + self.date.isoformat()
+        pagepath = os.path.join(self.current_facility.directory, pagefilename)
+        open(pagepath, "w").write(page)
+        return page
 
-    @property
-    def latest_date(self):
-        if self.file_date and self.crawl_date:
-            return max(self.file_date, self.crawl_date)
-        elif self.file_date:
-            return self.file_date
+    def build_start_url(self, resultcount=20):
+        starturl = "https://ecm.idem.in.gov/cs/idcplg?IdcService=GET_SEARCH_RESULTS"
+        starturl += "&QueryText=xAIID+%3Ccontains%3E+`" + self.current_facility.vfc_id + "`"
+        starturl += "&listTemplateId=SearchResultsIDEM&searchFormType=standard"
+        starturl += "&SearchQueryFormat=UNIVERSAL&ftx=&AdvSearch=True&ResultCount="
+        starturl += str(resultcount) + "&SortField=dInDate&SortOrder=Desc"
+        return starturl
+
+    def check_and_make_facility_directory(self):
+        self.current_facility.directory = os.path.join(self.directory, self.current_facility.vfc_id)
+        try:
+            os.mkdir(self.current_facility.directory)
+        except OSError:
+            pass
         else:
-            return self.crawl_date
+            self.firsttime = True  # if directory not created, we know it hasn't been checked before
+        return self.current_facility.directory
 
-    def from_oldstyle_row(self, row):
-        relative_url, self.id, month, date, year, self.program, self.type, self.size = row
-        self.file_date = datetime.date(int(year), int(month), int(date))
-        domain = "https://ecm.idem.in.gov"
-        self.url = domain + relative_url
+    def get_updated_files_without_downloading(self):
+        def date_filter(filename):
+            is_previous = False
+            prefix = self.current_facility.vfc_id + "_"
+            if filename.startswith(prefix) and re.search("\d\d\d\d-\d\d-\d\d", filename):
+                is_previous = True
+            return is_previous
+        directory = self.directory
+        files = os.listdir(directory)
+        previous = filter(date_filter, files)
+        if previous:
+            dates = [(re.search("\d\d\d\d-\d\d-\d\d", x).group(0).split("-"), x) for x in previous]
+            dates.sort()
+            foundpath = os.path.join(directory, dates[-1][-1])
+            yesterfiles = self.current_facility.docs_from_page(open(foundpath).read())
+            todayfiles = self.current_facility.docs_from_page(self.current_facility.page)
+            updated = todayfiles - yesterfiles
+        else:
+            print "New facility!"
+            updated = self.current_facility.docs_from_page(self.current_facility.page)
+        return updated
 
-    def retrieve_file_patiently(self, maxtries=10):
-        done = False
-        inc = 0
-        while not done:
-            inc += 1
-            if inc > maxtries:
-                print "Aborting!"
-                return False
-            try:
-                response = self.session.get(self.url, stream=True)
-                with open(self.path, 'wb') as out_file:
-                    shutil.copyfileobj(response.raw, out_file)
-            except Exception, e:
-                print str(e)
-                time.sleep(30)
-            else:
-                del response
-                done = True
-                print "Download complete"
-                time.sleep(3)
+    def fetch_all_files_for_facility(self):
+        allfiles = set()
+        if not self.current_facility.page:
+            self.current_facility.page = self.retrieve_facility_page()
+        needle = "javascript:addQueryFilter\('xIDEMDocumentType', '([\w\s]+)'\)"
+        rawtypes = re.findall(needle, self.current_facility.page)
+        types = map(lambda x: x.replace(" ", "%20"), rawtypes)
+        print str(types)
+        for t in types:
+            morefiles = self.fetch_type_files(t)
+            allfiles |= morefiles
+            print len(morefiles), len(allfiles)
+            time.sleep(tea_core.DEFAULT_WAIT)
+        return allfiles
+
+    def fetch_type_files(self, filetype):
+        print "***%s***" % filetype
+        url = generate_type_url(self.current_facility.vfc_id, filetype)
+        page = get_page_patiently(url, session=self.session)
+        self.current_facility.page += page
+        morefiles = self.fetch_files_for_current_facility()
+        return morefiles
+
+    def fetch_files_for_current_facility(self):
+        newfiles = self.current_facility.download()
+        return newfiles
+
+    def scan_zip_for_premature(self):
+        sitedirs = filter(lambda x: os.path.isdir(os.path.join(self.directory, x)), os.listdir(self.directory))
+        for siteid in sitedirs:
+            if siteid not in self.sites_by_siteid.keys():
+                print "%s not in keys!" % siteid
+                continue
+            self.current_facility = self.sites_by_siteid[siteid]
+            sitedir = os.path.join(self.directory, siteid)
+            if scan_for_premature_stops(sitedir):
+                self.get_downloaded_docs()
+                total = get_latest_total(sitedir)
+                if total > 500:
+                    self.fetch_all_files_for_facility()
+                else:
+                    self.fetch_files_for_current_facility()
         return True
+
+    def scan_site_for_premature(self, siteid):
+        if siteid not in self.sites_by_siteid.keys():
+            print "%s not in keys!" % siteid
+            return
+        self.current_facility = self.sites_by_siteid[siteid]
+        sitedir = os.path.join(self.directory, siteid)
+        whether_premature = scan_for_premature_stops(sitedir)
+        if whether_premature:
+            self.get_downloaded_docs()
+            total = get_latest_total(sitedir)
+            if total > 500:
+                self.fetch_all_files_for_facility()
+            else:
+                self.fetch_files_for_current_facility()
+
+    def get_facility_from_row(self, row):
+        facility = Facility(row=row, parent=self, worry_about_crawl_date=self.worry_about_crawl_date)
+        return facility
+
+    @staticmethod
+    def get_valid_rows_from_page(page):
+        rows = page.split("<tr>")[1:]
+        rows = [x for x in rows if "span class=idemfs" in x]
+        rows = [x for x in rows if "xAIID<matches>" in x]
+        return rows
+
+    def get_facilities_from_page(self, page=None):
+        if page is None:
+            page = self.page
+        rows = self.get_valid_rows_from_page(page)
+        facilities = map(self.get_facility_from_row, rows)
+        return facilities
+
+    def latlongify(self):
+        for facility in self.facilities:
+            if not facility.latlong:
+                facility.latlongify()
+            time.sleep(tea_core.DEFAULT_SHORT_WAIT)
+
+
+class DocumentCollection(list):  # for a collection of documents either associated with one site or a geographic area.
+
+    def __init__(self, *args):
+        super(DocumentCollection, self).__init__(*args)
+        self.programs = set()
+        self.types = set()
+
+    @staticmethod
+    def validate_addition(obj):
+        if not isinstance(obj, Document):
+            raise TypeError
+
+    def do_addition(self, obj):
+        self.programs.add(obj.program)
+        self.types.add(obj.type)
+
+    def append(self, obj):
+        self.validate_addition(obj)
+        super(DocumentCollection, self).append(obj)
+        self.do_addition(obj)
+
+    def extend(self, iterable):
+        for i in iterable:
+            self.validate_addition(i)
+        for i in iterable:
+            self.do_addition(i)
+
+
+class FacilityCollection(list):
+
+    def __init__(self):
+        super(FacilityCollection, self).__init__()
+        self.iddic = {}
+        self.namedic = collections.defaultdict(list)
+
+    @staticmethod
+    def validate_addition(obj):
+        if not isinstance(obj, Facility):
+            raise TypeError
+
+    def do_addition(self, obj):
+        self.iddic[obj.vfc_id] = obj
+        self.namedic[obj.vfc_name].append(obj)
+
+    def append(self, obj):
+        self.validate_addition(obj)
+        super(FacilityCollection, self).append(obj)
+        self.do_addition(obj)
+
+    def extend(self, iterable):
+        for i in iterable:
+            self.validate_addition(i)
+        super(FacilityCollection, self).extend(iterable)
+        for i in iterable:
+            self.do_addition(i)
+
+
+class ZipCollection(list):
+    html = ""
+    update_all = False
+    worry_about_crawl_date = True
+    restart = False
+
+    def __init__(self, zips=lakezips, offline=False, **kwargs):
+        super(ZipCollection, self).__init__()
+        self.date = datetime.date.today()
+        self.facilities = set()
+        self.iddic = {}
+        self.namedic = collections.defaultdict(list)
+        self.zips = zips
+        self.offline = offline
+        for zipcode in zips:
+            print zipcode
+            self.setup_updater(zipcode, kwargs)
+
+    def setup_updater(self, zipcode, kwargs):
+        updater = ZipUpdater(zipcode, **kwargs)
+        if self.offline:
+            updater.go_offline()
+        else:
+            updater.whether_update_zip_info = (self.date.day % 7 == int(zipcode) % 7)  # to prevent bunching up
+            updater.whether_download = zipcode in downloadzips
+        for facility in updater.facilities:
+            self.add_facility(facility)
+        self.append(updater)
+
+    def add_facility(self, facility):
+        self.facilities.add(facility)
+        self.iddic[facility.vfc_id] = facility
+        self.namedic[facility.vfc_name].append(facility)
+
+    def go(self, restart=False):
+        if restart:
+            self.restart = restart
+        for updater in self:
+            self.run_updater(updater)
+
+    def run_updater(self, updater):
+        if self.restart:
+            if updater.zip == self.restart:
+                self.restart = False
+            else:
+                return
+        print "***%s***" % updater.zip
+        updater.do_zip()
+
+    def find_by_name(self, searchterm):
+        searchterm = searchterm.upper()
+        matches = filter(lambda x: searchterm in x, self.namedic.keys())
+        found = []
+        for m in matches:
+            found.extend(self.namedic[m])
+        return found
+
+    def get_facilities_within(self, point, maxdistance):
+        facilities_in_range = []
+        for facility in self.facilities:
+            if not hasattr(facility, "latlong"):
+                continue
+            elif facility.latlong is False:
+                continue
+            else:
+                distance = get_distance(point, facility.latlong)
+                if distance <= maxdistance:
+                    facilities_in_range.append((distance, facility))
+        facilities_in_range.sort()
+        facilities = [x[1] for x in facilities_in_range]
+        return facilities
+
+    def dump_latlongs(self, filepath=latlong_filepath):
+        output = ""
+        for facility in self.facilities:
+            line = self.generate_facility_line(facility)
+            output += line + "\n"
+        open(filepath, "w").write(output)
+
+    def generate_facility_line(self, facility):
+        facility_id = facility.vfc_id
+        name = facility.vfc_name
+        address = facility.google_address
+        lat, lon = self.stringify_latlong(facility.latlong)
+        data = [facility_id, name, lat, lon, address]
+        line = "\t".join(data)
+        return line
+
+    @staticmethod
+    def stringify_latlong(latlong):
+        """
+        Take latlong (tuple or False) and return as pair of strings
+        :param latlong: tuple
+        :return: str
+        """
+        if type(latlong) == tuple:
+            lat = str(latlong[0])
+            lon = str(latlong[1])
+        else:  # e.g. if False
+            lat = ""
+            lon = ""
+        return lat, lon
+
+    def reload_latlongs(self, filepath=latlong_filepath):
+        for line in open(filepath):
+            if not line.strip() or "\t" not in line:
+                continue
+            self.assign_geodata_from_line(line)
+
+    def assign_geodata_from_line(self, line):
+        facility_id, name, latlong, address = process_location_line(line)
+        facility = self.iddic[facility_id]
+        facility.latlong = latlong
+        facility.google_address = address
+        return facility
+
+    def get_all_docs_in_range(self, start_date, end_date):
+        docs_in_range = {}
+        for facility in self.facilities:
+            in_range = [x for x in facility.docs if end_date >= x.file_date >= start_date]
+            if in_range:
+                docs_in_range[facility] = in_range
+        return docs_in_range
+
+    def get_active_facilities(self, lookback_days=7):
+        cutoff_date = get_reference_date(lookback_days)
+        active_facilities = self.get_active_since(cutoff_date)
+        return active_facilities
+
+    def get_active_since(self, cutoff_date):
+        active_facilities = []
+        for facility in self.facilities:
+            if facility.is_active_since(cutoff_date):
+                active_facilities.append(facility)
+        return active_facilities
+
+    def get_facilities_due_for_look(self):
+        to_do = []
+        for facility in self.facilities:
+            if facility.whether_to_update:
+                to_do.append(facility)
+        return to_do
+
+    def latlongify(self):
+        for facility in self.facilities:
+            if not facility.latlong:
+                facility.latlongify()
+
+    def catchup_downloads(self):
+        for facility in self.facilities:
+            self.catchup_facility(facility)
+
+    @staticmethod
+    def catchup_facility(facility):
+        facility.get_downloaded_docs()
+        if facility.due_for_download is True:
+            print facility.vfc_name, facility.directory, facility.full_address
+            facility.download()
+            time.sleep(tea_core.DEFAULT_SHORT_WAIT)
+
+
+class ZipCycler:
+
+    def __init__(self, zips=lakezips):
+        self.zips = zips
+        self.new = []
+        self.updated = []
+        self.iddic = {}
+        self.ids = set()
+
+    def cycle(self, do_all=False):
+        for current_zip in self.zips:  # avoid holding multiple updaters in memory
+            updater = ZipUpdater(current_zip)
+            print current_zip, len(updater.facilities)
+            for facility in updater.facilities:
+                if do_all or facility.whether_to_update:
+                    self.update_facility(facility)
+        return self.new
+
+    def update_facility(self, facility):
+        new_files = facility.check_for_new_docs()
+        print facility.vfc_name, len(new_files)
+        if new_files:
+            self.new.append(new_files)
+            self.updated.append(facility)
+
+    def latlongify_updated(self, filepath=latlong_filepath):
+        self.iddic = dict([(x.vfc_id, x) for x in self.updated])
+        self.ids = set(self.iddic.keys())
+        for line in open(filepath):
+            self.latlongify_facility_from_line(line)
+
+    def latlongify_facility_from_line(self, line):
+        data = process_location_line(line)
+        if data is None:
+            return
+        else:
+            self.assign_geodata(data)
+
+    def assign_geodata(self, data):
+        facility_id, name, latlong, address = data
+        if facility_id in self.ids:
+            facility = self.iddic[facility_id]
+            facility.latlong = latlong
+            facility.google_address = address
+
+
+def process_location_line(line):
+    idcol = 0
+    namecol = 1
+    latcol = 2
+    loncol = 3
+    addcol = 4
+    if not line.strip() or "\t" not in line:
+        return
+    pieces = line.split("\t")
+    facility_id = pieces[idcol]
+    latstring = pieces[latcol]
+    lonstring = pieces[loncol]
+    name = pieces[namecol]
+    address = pieces[addcol].strip()  # avoid trailing newline
+    latlong = destring_latlong(latstring, lonstring)
+    return facility_id, name, latlong, address
+
+
+def get_location_data(filepath=latlong_filepath):
+    data = []
+    for line in open(filepath):
+        linedata = process_location_line(line)
+        data.append(linedata)
+    return data
+
+
+def destring_latlong(latstring, lonstring):
+    if not latstring or not lonstring:
+        latlong = False
+    else:
+        lat = float(latstring)
+        lon = float(lonstring)
+        latlong = (lat, lon)
+    return latlong
 
 
 def build_zip_url(zipcode):
