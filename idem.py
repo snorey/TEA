@@ -35,6 +35,14 @@ latlong_filepath = os.path.join(idem_settings.maindir, "facilitydump.txt")
 latest_json_path = os.path.join(idem_settings.websitedir, "latest_vfc.json")
 
 
+class FacilityCollection(list):
+
+    def __init__(self):
+        super(FacilityCollection, self).__init__()
+        self.iddic = {}
+        self.namedic = collections.defaultdict(list)
+
+
 class ZipCollection(list):
     html = ""
     update_all = False
@@ -1006,6 +1014,15 @@ class Document:
         filename = filename.replace("/", "_")
         return filename
 
+    @property
+    def latest_date(self):
+        if self.file_date and self.crawl_date:
+            return max(self.file_date, self.crawl_date)
+        elif self.file_date:
+            return self.file_date
+        else:
+            return self.crawl_date
+
     def from_oldstyle_row(self, row):
         relative_url, self.id, month, date, year, self.program, self.type, self.size = row
         self.file_date = datetime.date(int(year), int(month), int(date))
@@ -1377,24 +1394,21 @@ def get_docs_since(facility, reference_date):
     return activity
 
 
-def build_popup(facility, reference_date=None):
-    if reference_date is None:
-        reference_date = get_reference_date()
-    url = facility.ecm_url
-    name = facility.vfc_name
-    address = facility.full_address
-    popup = ""
-    linkline = '<a href="%s" target="blank">%s</a>' % (url, name)
-    description = address
-    doclist = build_doc_list(facility, reference_date)
-    for line in [linkline, description, doclist]:
-        popup += "<p>%s</p>\n" % line
-    return popup
+def build_doc_list_item(doc):
+    pattern = '\n<li><a href="%s" target="blank">%s</a> (%s), %s</li>'
+    url = doc.url
+    date = tea_core.give_us_date(doc.file_date)
+    parenthetical = doc.program + "-" + doc.type
+    if doc.size is None:
+        doc.size = 0
+    size = convert_size(doc.size)
+    docstring = pattern % (url, date, parenthetical, size)
+    return docstring
 
 
 def build_doc_list(facility, reference_date, cutoff=5):
     docs = get_docs_since(facility, reference_date)
-    reference_date_us = reference_date.strftime("%B %d, %Y")
+    reference_date_us = tea_core.give_us_date(reference_date)
     doclist = "New docs added since %s:<ul>" % reference_date_us
     count = 0
     for doc in docs:
@@ -1410,30 +1424,33 @@ def build_doc_list(facility, reference_date, cutoff=5):
     return doclist
 
 
-def build_doc_list_item(doc):
-    pattern = '\n<li><a href="%s" target="blank">%s</a> (%s), %s</li>'
-    url = doc.url
-    date = doc.file_date.strftime("%B %d, %Y")
-    parenthetical = doc.program + "-" + doc.type
-    if doc.size is None:
-        doc.size = 0
-    size = convert_size(doc.size)
-    docstring = pattern % (url, date, parenthetical, size)
-    return docstring
+def facility_to_html(facility, reference_date=None):
+    if reference_date is None:
+        reference_date = get_reference_date()
+    url = facility.ecm_url
+    name = facility.vfc_name
+    address = facility.full_address
+    linkline = '<a href="%s" target="blank">%s</a>' % (url, name)
+    description = address
+    doclist = build_doc_list(facility, reference_date)
+    popup = ""
+    for line in [linkline, description, doclist]:
+        popup += "<p>%s</p>\n" % line
+    return popup
 
 
-def facility_to_geojson(facility,
-                        for_leaflet=True,
-                        reference_date=None):
-    # 1. put properties into dict
-    popup = build_popup(facility, reference_date)
+def build_json_props(facility, reference_date):
+    popup = facility_to_html(facility, reference_date)
     props = {
         "name": facility.vfc_name,
         "address": facility.vfc_address,
         "latest activity": get_latest_activity(facility),
         "popupContent": popup,
     }
-    # 2. get latlong from facility, and if not in facility, from remote service
+    return props
+
+
+def facility_to_point(facility, for_leaflet=True):
     if facility.full_address and not facility.latlong:
         tea_core.latlongify(facility)
     if facility.latlong:
@@ -1442,8 +1459,17 @@ def facility_to_geojson(facility,
         return None
     if for_leaflet:  # LeafletJS uses reverse of GeoJSON order
         coords = tuple(reversed(coords))
-    # 3. compose as Point with properties
     point = geojson.Point(coords)
+    return point
+
+
+def facility_to_geojson(facility,
+                        for_leaflet=True,
+                        reference_date=None):
+    # 1. put properties into dict
+    props = build_json_props(facility, reference_date)
+    # 2. get latlong from facility, and if not in facility, from remote service
+    point = facility_to_point(facility, for_leaflet)
     feature = geojson.Feature(geometry=point, properties=props)
     return feature
 
@@ -1458,6 +1484,44 @@ def active_sites_to_geojson(zip_collection, reference_date):
     sites = get_sites_with_activity(zip_collection.facilities, reference_date)
     feature_collection = facilities_to_geojson(sites, reference_date)
     return feature_collection
+
+
+def facilities_to_html(facilities, reference_date):
+    lines = [facility_to_html(facility, reference_date) for facility in facilities]
+    line_pattern = '<li class="facility-list-item">%s</li>\n'
+    list_pattern = '<ul class="facility-list">\n%s\n</ul>\n'
+    list_items = [line_pattern % x for x in lines]
+    html_list = list_pattern % ("".join(list_items))
+    return html_list
+
+
+def active_sites_to_html(facilities, reference_date):
+    facilities = get_sites_with_activity(facilities, reference_date)
+    html_list = facilities_to_html(facilities, reference_date)
+    return html_list
+
+
+def write_updates_html(zip_collection, reference_date, geography="Lake County", today=None, filepath=None):
+    if filepath is None:
+        filepath = os.path.join(idem_settings.websitedir, "updates.html")
+    if today is None:
+        today = datetime.date.today()
+    facilities = zip_collection.facilities
+    list_html = active_sites_to_html(facilities, reference_date)
+    forstring = 'for %s for %s' % (geography, today)
+    template = '<html><head><title>Updates %s</title></head><body><h1>Updates %s</h1>\n' \
+               '<div id="updates">%s</div></body></html>'
+    html = template % (forstring, forstring, list_html)
+    result = save_or_return(html, filepath)
+    return result
+
+
+def save_or_return(text, filepath=None):
+    if filepath:
+        open(filepath, "w").write(text)
+        return filepath
+    else:
+        return text
 
 
 def get_page_patiently(url, session=None, timeout=TIMEOUT):
@@ -1489,13 +1553,12 @@ def get_page_patiently(url, session=None, timeout=TIMEOUT):
 
 def get_doc_url_info(row):
     needle = 'href="(/cs/.+?[^\d](\d+)\.pdf)"'
-    linkcatcher = re.search(needle, row)
-    if linkcatcher:
-        relative_url = linkcatcher.group(1)
+    linkmatcher = re.search(needle, row)
+    if linkmatcher:
+        relative_url = linkmatcher.group(1)
         url = idem_settings.ecm_domain + relative_url
-        fileid = linkcatcher.group(2)
+        fileid = linkmatcher.group(2)
     else:
-        relative_url = ""
         url = ""
         fileid = ""
     return url, fileid
@@ -1510,7 +1573,7 @@ def build_document_from_row(row, facility, crawl_date=None):
     datestring, program, doctype, public, size = pieces
     month, date, year = [int(x) for x in datestring.split("/")]
     file_date = datetime.date(year, month, date)
-    rowdata = (relative_url, fileid, month, date, year, program, doctype, size)
+    rowdata = (url, fileid, month, date, year, program, doctype, size)
     newdoc = Document(facility=facility,
                       url=url,
                       id=fileid,

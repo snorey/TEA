@@ -592,10 +592,16 @@ def extract_coords_from_polygon_js(filepath, reverse=True):
     return coords
 
 
+def give_us_date(date):
+    pattern = "%B %d, %Y"
+    usdate = date.strftime(pattern)
+    return usdate
+
+
 def timestamp_directory(directory, date=None):
     if date is None:
         date = datetime.date.today()
-    usdate = date.strftime("%B %d, %Y")
+    usdate = give_us_date(date)
     text = "var timestamp = '%s';" % usdate
     filepath = os.path.join(directory, "timestamp.js")
     open(filepath, "w").write(text)
