@@ -35,12 +35,62 @@ latlong_filepath = os.path.join(idem_settings.maindir, "facilitydump.txt")
 latest_json_path = os.path.join(idem_settings.websitedir, "latest_vfc.json")
 
 
+class DocumentCollection(list): # for a collection of documents either associated with one site or a geographic area.
+
+    def __init__(self, *args):
+        super(DocumentCollection, self).__init__(*args)
+        self.programs = set()
+        self.types = set()
+
+    @staticmethod
+    def validate_addition(object):
+        if not isinstance(object, Document):
+            raise TypeError
+
+    def do_addition(self, object):
+        self.programs.add(object.program)
+        self.types.add(object.type)
+
+    def append(self, object):
+        self.validate_addition(object)
+        super(DocumentCollection, self).append(object)
+        self.do_addition(object)
+
+    def extend(self, iterable):
+        for i in iterable:
+            self.validate_addition(i)
+        super(DocumentCollection, self).extend(iterable)
+        for i in iterable:
+            self.do_addition(i)
+
+
 class FacilityCollection(list):
 
     def __init__(self):
         super(FacilityCollection, self).__init__()
         self.iddic = {}
         self.namedic = collections.defaultdict(list)
+
+    @staticmethod
+    def validate_addition(object):
+        if not isinstance(object, Facility):
+            raise TypeError
+
+    def do_addition(self, object):
+        self.iddic[object.vfc_id] = object
+        self.namedic[object.vfc_name].append(object)
+
+    def append(self, object):
+        self.validate_addition(object)
+        super(FacilityCollection, self).append(object)
+        self.do_addition(object)
+
+    def extend(self, iterable):
+        for i in iterable:
+            self.validate_addition(i)
+        super(FacilityCollection, self).extend(iterable)
+        for i in iterable:
+            self.do_addition(i)
 
 
 class ZipCollection(list):
