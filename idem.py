@@ -676,6 +676,13 @@ class Facility:  # data structure
         else:
             return False
 
+    @property
+    def programs(self):
+        programs = [x.program for x in self.docs]
+        programs = set(programs)
+        programs = sorted(list(programs))
+        return programs
+
     def is_active_since(self, cutoff_date):
         if not self.docs:
             return False
@@ -1445,6 +1452,7 @@ def build_json_props(facility, reference_date):
         "name": facility.vfc_name,
         "address": facility.vfc_address,
         "latest activity": get_latest_activity(facility),
+        "programs": facility.programs,
         "popupContent": popup,
     }
     return props
