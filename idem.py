@@ -809,9 +809,9 @@ class ZipUpdater:
             time.sleep(tea_core.DEFAULT_SHORT_WAIT)
 
 
-class DocumentCollection(list):  # for a collection of documents either associated with one site or a geographic area.
+class DocumentCollection(list):
     """
-    Ordered ollection of unique VFC documents.
+    Ordered collection of unique VFC documents.
     """
     def __init__(self, *args):
         self.items = set()
