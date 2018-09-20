@@ -445,13 +445,13 @@ class Facility:  # data structure
 
     @property
     def ecm_url(self):
-        starturl = "https://ecm.idem.in.gov/cs/idcplg?IdcService=GET_SEARCH_RESULTS"
-        starturl += "&QueryText=xAIID+%3Ccontains%3E+`" \
-                    + self.vfc_id \
-                    + "`&listTemplateId=SearchResultsIDEM&searchFormType=standard" \
-                    + "&SearchQueryFormat=UNIVERSAL&ftx=&AdvSearch=True&ResultCount=" \
-                    + str(self.resultcount) \
-                    + "&SortField=dInDate&SortOrder=Desc"
+        starturl = idem_settings.ecm_domain \
+                   + "/cs/idcplg?IdcService=GET_SEARCH_RESULTS"\
+                   + self.vfc_id \
+                   + "`&listTemplateId=SearchResultsIDEM&searchFormType=standard" \
+                   + "&SearchQueryFormat=UNIVERSAL&ftx=&AdvSearch=True&ResultCount=" \
+                   + str(self.resultcount) \
+                   + "&SortField=dInDate&SortOrder=Desc"
         return starturl
 
     def retrieve_page_patiently(self, url):
@@ -1429,8 +1429,8 @@ def get_distance(point1,
     return distance
 
 
-def get_doc_date(doc):  # crawl date or file date, whichever is most recent
-    date = max(doc.crawl_date, doc.file_date)
+def get_doc_date(doc):
+    date = doc.latest_date
     return date
 
 
@@ -1451,14 +1451,27 @@ def get_docs_since(facility, reference_date):
     return activity
 
 
+def is_doc_fresh(doc, today=None, cutoff=1):
+    if today is None:
+        today = datetime.date.today()
+    delta = datetime.timedelta(cutoff)
+    if today - doc.latest_date <= delta:
+        return True
+    else:
+        return False
+
+
 def build_doc_list_item(doc):
     pattern = '\n<li><a href="%s" target="blank">%s</a> (%s), %s</li>'
+    boldpattern = '\n<li><b><a href="%s" target="blank">%s</a> (%s)</b>, %s</li>'
     url = doc.url
     date = tea_core.give_us_date(doc.file_date)
     parenthetical = doc.program + "-" + doc.type
     if doc.size is None:
         doc.size = 0
     size = convert_size(doc.size)
+    if is_doc_fresh(doc):
+        pattern = boldpattern
     docstring = pattern % (url, date, parenthetical, size)
     return docstring
 
@@ -1631,7 +1644,7 @@ def get_doc_url_info(row):
     return url, fileid
 
 
-def build_document_from_row(row, facility, crawl_date=None):
+def get_doc_row_data(row):
     url, fileid = get_doc_url_info(row)
     pieces = re.findall('nowrap="nowrap">(.+?)</div>', row)
     if len(pieces) != 5:
@@ -1639,8 +1652,14 @@ def build_document_from_row(row, facility, crawl_date=None):
         return False
     datestring, program, doctype, public, size = pieces
     month, date, year = [int(x) for x in datestring.split("/")]
-    file_date = datetime.date(year, month, date)
     rowdata = (url, fileid, month, date, year, program, doctype, size)
+    return rowdata
+
+
+def build_document_from_row(row, facility, crawl_date=None):
+    data = get_doc_row_data(row)
+    url, fileid, month, date, year, program, doctype, size = data
+    file_date = datetime.date(year, month, date)
     newdoc = Document(facility=facility,
                       url=url,
                       id=fileid,
@@ -1648,7 +1667,7 @@ def build_document_from_row(row, facility, crawl_date=None):
                       type=doctype,
                       program=program,
                       crawl_date=crawl_date,
-                      row=rowdata,
+                      row=data,
                       build=False,
                       session=facility.session,
                       size=int(size)
