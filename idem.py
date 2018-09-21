@@ -73,10 +73,7 @@ class Document:
 
     @property
     def identity(self):
-        if self.filename:
-            return self.filename
-        else:
-            return self.id, self.facility
+        return self.filename
 
     @property
     def filename(self):
@@ -925,6 +922,10 @@ class FacilityCollection(list):
         self.iddic = {}
         self.namedic = collections.defaultdict(list)
         self.items = set()
+        items = set(self)
+        for item in items:  # todo: abstract into general DataCollection object
+            self.validate_item(item)
+            self.remove_extra_item(item)
         self.recalculate()
 
     def validate_item(self, obj):
