@@ -151,8 +151,7 @@ class Facility:  # data structure
         self.updated_docs = set()
         self.downloaded_filenames = set()
         self.session = requests.Session()
-        self.docs = []
-        self.doc_ids = set()
+        self.docs = DocumentCollection()
         if vfc_id is not False:
             self.vfc_id = vfc_id
         if row:  # overrides vfc_id if set
@@ -171,33 +170,36 @@ class Facility:  # data structure
         if arguments:
             tea_core.assign_values(self, arguments, tolerant=True)
         self.downloaded_filenames = self.get_downloaded_docs()
-        self.since_last_check = since_last_scan(self.directory)
-        self.get_latest_page()
+        if self.directory:
+            self.since_last_check = since_last_scan(self.directory)
+            self.get_latest_page()
+        else:
+            self.since_last_check = 0
         if retrieve:
-            if not self.page:
-                print "retrieving page", self.vfc_id, self.vfc_name
-                self.page = self.retrieve_page()
-                print len(self.page)
+            self.retrieve_page_if_missing()
         if not self.downloaded_filenames:
             self.downloaded_filenames = self.get_downloaded_docs()
-        self.docs = self.docs_from_directory()
-        self.build_filenamedic()
+        self.docs_from_directory()
+
+    def retrieve_page_if_missing(self):
+        if not self.page:
+            print "retrieving page", self.vfc_id, self.vfc_name
+            self.page = self.retrieve_page()
+            print len(self.page)
 
     def get_downloaded_docs(self):
+        docs = set()
         if self.directory:
             docs = set(os.listdir(self.directory))
-        else:
-            docs = set()
-            return docs
-        docs = set(filter(lambda x: x.endswith(".pdf"), docs))
-        self.downloaded_filenames = docs
+            docs = set(filter(lambda x: x.endswith(".pdf"), docs))
+            self.downloaded_filenames = docs
         return docs
 
     @property
     def due_for_download(self):
         if not self.docs:
             return False
-        all_filenames = set([x.filename for x in self.docs])
+        all_filenames = set(self.docs.namedic.keys())
         if all_filenames - self.downloaded_filenames:
             return True
         else:
@@ -205,17 +207,16 @@ class Facility:  # data structure
 
     @property
     def programs(self):
-        programs = [x.program for x in self.docs]
-        programs = set(programs)
+        programs = self.docs.programs
         programs = sorted(list(programs))
         return programs
 
     def is_active_since(self, cutoff_date):
         if not self.docs:
             return False
-        if self.latest_file_date >= cutoff_date:
+        if self.docs.latest_file_date >= cutoff_date:
             return True
-        elif self.latest_crawl_date >= cutoff_date:
+        elif self.docs.latest_crawl_date >= cutoff_date:
             return True
         else:
             return False
@@ -239,57 +240,14 @@ class Facility:  # data structure
         self.vfc_url = "http://vfc.idem.in.gov/DocumentSearch.aspx?xAIID=" + self.vfc_id
         self.full_address = self.vfc_address + ", " + self.city + self.zip
 
-    def docs_from_directory(self):
-        filenames = os.listdir(self.directory)
-        if self.worry_about_crawl_date:
-            docs = self.docs_from_pages(filenames)
-        else:
-            self.get_latest_page()
-            docs = self.docs_from_page(self.page)
-        self.docs = docs
-        return docs
-
-    def docs_from_pages(self, filenames):
-        all_docs = []
-        filenames.sort()  # put in chronological order
-        for filename in filenames:
-            if not filename:
-                continue
-            page_docs = self.filename_to_docs(filename)
-            for doc in page_docs:
-                if doc.id in self.doc_ids:  # already crawled on previous date
-                    continue
-                else:
-                    self.doc_ids.add(doc.id)
-                    all_docs.append(doc)
-        return all_docs
-
-    def filename_to_docs(self, filename):
-        crawl_date_iso = re.search("\d\d\d\d-\d\d-\d\d", filename).group(0)
-        filepath = os.path.join(self.directory, filename)
-        page = open(filepath).read()
-        crawl_date = date_from_iso(crawl_date_iso)
-        page_docs = self.docs_from_page(page, crawl_date=crawl_date, skip_ids=self.doc_ids)
-        return page_docs
-
-    @staticmethod
-    def get_info_from_old_style_rows(page):
-        pattern = '<tr>.+?<a.+?href="(/cs/.+?[^\d](\d{7, 9})\.pdf)"[\s\S]+?>(\d+)/(\d+)' \
-            '/(\d\d\d\d)<[\s\S]+?nowrap="nowrap">(.+?)<[\s\S]+?nowrap="nowrap">(\d+)</div>[\s\S]+?' \
-            'nowrap="nowrap">(.+?)</div>'
-        old_style_rows = re.findall(pattern, page)
-        return old_style_rows
-
-    def docs_from_page(self, page, crawl_date=None, skip_ids=None):
-        if skip_ids is None:
-            skip_ids = set()
+    def docs_from_page(self, page, crawl_date=None):
         # pattern for older (pre-Aug 2018) pages
-        docs = []
+        docs = DocumentCollection()
         old_style_rows = self.get_info_from_old_style_rows(page)
         if old_style_rows:
             for rowdata in old_style_rows:
                 docid = rowdata[1]
-                if docid in skip_ids:
+                if docid in self.docs.ids:
                     continue
                 else:
                     newdoc = Document(row=rowdata, facility=self, crawl_date=crawl_date, session=self.session)
@@ -303,7 +261,7 @@ class Facility:  # data structure
                 if not linkcatcher:
                     continue
                 fileid = linkcatcher.group(1)
-                if fileid in skip_ids:
+                if fileid in self.docs.ids:
                     continue
                 else:
                     newdoc = build_document_from_row(rowtext, self, crawl_date=crawl_date)
@@ -311,15 +269,50 @@ class Facility:  # data structure
         docs.sort()
         return docs
 
-    def build_filenamedic(self):
-        filenamedic = dict(map(lambda x: (x.filename, x), self.docs))
-        self.filenamedic = filenamedic
+    def docs_from_directory(self):
+        if not self.directory:
+            return
+        filenames = os.listdir(self.directory)
+        if self.worry_about_crawl_date:
+            self.docs = self.docs_from_pages(filenames)
+        else:
+            self.get_latest_page()
+            self.docs = self.docs_from_page(self.page)
+
+    def docs_from_pages(self, filenames):
+        all_docs = DocumentCollection()
+        filenames.sort()  # put in chronological order
+        for filename in filenames:
+            if not filename:
+                continue
+            page_docs = self.filename_to_docs(filename)
+            for doc in page_docs:
+                if doc.id in self.docs.ids:  # already crawled on previous date
+                    continue
+                else:
+                    all_docs.append(doc)
+        return all_docs
+
+    def filename_to_docs(self, filename):
+        crawl_date_iso = re.search("\d\d\d\d-\d\d-\d\d", filename).group(0)
+        filepath = os.path.join(self.directory, filename)
+        page = open(filepath).read()
+        crawl_date = date_from_iso(crawl_date_iso)
+        page_docs = self.docs_from_page(page, crawl_date=crawl_date, skip_ids=self.docs.ids)
+        return page_docs
+
+    @staticmethod
+    def get_info_from_old_style_rows(page):
+        pattern = '<tr>.+?<a.+?href="(/cs/.+?[^\d](\d{7, 9})\.pdf)"[\s\S]+?>(\d+)/(\d+)' \
+            '/(\d\d\d\d)<[\s\S]+?nowrap="nowrap">(.+?)<[\s\S]+?nowrap="nowrap">(\d+)</div>[\s\S]+?' \
+            'nowrap="nowrap">(.+?)</div>'
+        old_style_rows = re.findall(pattern, page)
+        return old_style_rows
 
     def download(self, filenames=None):
         allfiles = set()
-        self.build_filenamedic()
         if filenames is None:
-            filenames = set(self.filenamedic.keys()) - self.downloaded_filenames
+            filenames = set(self.docs.namedic.keys()) - self.downloaded_filenames
             filenames = sorted(list(filenames))
         for filename in filenames:
             print filename, "%d/%d" % (1 + filenames.index(filename), len(filenames))
@@ -329,7 +322,7 @@ class Facility:  # data structure
         return allfiles
 
     def download_filename(self, filename):
-        doc = self.filenamedic[filename]
+        doc = self.docs.namedic[filename]
         doc.path = os.path.join(self.directory, filename)
         doc.retrieve_file_patiently()
         return doc
@@ -821,11 +814,16 @@ class DocumentCollection(list):
         self.items = set()
         self.programs = set()
         self.types = set()
+        self.ids = set()
+        self.namedic = {}
+        self.latest_file_date = None
+        self.latest_crawl_date = None
         super(DocumentCollection, self).__init__(*args)
-        self.recalculate()
-        for item in self.items:
+        items = set(self)
+        for item in items:
             self.validate_item(item)
             self.remove_extra(item)
+        self.recalculate()
 
     def __delitem__(self, key):
         super(DocumentCollection, self).__delitem__(key)
@@ -849,11 +847,12 @@ class DocumentCollection(list):
 
     def recalculate(self):
         self.items = set(self)
-        programs = set()
-        types = set()
+        self.programs = set()
+        self.types = set()
+        self.ids = set()
+        self.namedic = {}
         for item in self.items:
-            programs.add(item.program)
-            types.add(item.type)
+            self.do_addition(item)
 
     def validate_item(self, obj):
         if not isinstance(obj, Document):
@@ -863,9 +862,22 @@ class DocumentCollection(list):
         else:
             return True
 
-    def do_addition(self, obj):
-        self.programs.add(obj.program)
-        self.types.add(obj.type)
+    def update_dates(self, document):
+        if not self.latest_file_date:
+            self.latest_file_date = document.file_date
+        elif document.file_date > self.latest_file_date:
+            self.latest_file_date = document.file_date
+        if not self.latest_crawl_date:
+            self.latest_crawl_date = document.crawl_date
+        elif document.crawl_date > self.latest_crawl_date:
+            self.latest_crawl_date = document.crawl_date
+
+    def do_addition(self, document):
+        self.programs.add(document.program)
+        self.types.add(document.type)
+        self.ids.add(document.id)
+        self.namedic[document.filename] = document
+        self.update_dates(document)
 
     def append(self, obj):
         result = self.validate_item(obj)
@@ -878,6 +890,19 @@ class DocumentCollection(list):
         super(DocumentCollection, self).extend(iterable)
         for i in iterable:
             self.do_addition(i)
+
+    @property
+    def latest_date(self):
+        dates = [self.latest_crawl_date, self.latest_file_date]
+        if all(dates):
+            return max(dates)
+        elif any(dates):
+            if dates[0]:
+                return dates[0]
+            else:
+                return dates[1]
+        else:
+            return None
 
 
 class FacilityCollection(list):
@@ -1061,11 +1086,17 @@ class ZipCollection(list):
         return facility
 
     def get_all_docs_in_range(self, start_date, end_date):
+        """
+        Return all documents that have a file date in the selected range, in format {facility:DocumentCollection}.
+        :param start_date: datetime.date
+        :param end_date: datetime.date
+        :return: dict
+        """
         docs_in_range = {}
         for facility in self.facilities:
             in_range = [x for x in facility.docs if end_date >= x.file_date >= start_date]
             if in_range:
-                docs_in_range[facility] = in_range
+                docs_in_range[facility] = DocumentCollection(in_range)
         return docs_in_range
 
     def get_active_facilities(self, lookback_days=7):
@@ -1361,13 +1392,19 @@ def count_files_in_zip(zipcode):
     return total
 
 
+def tally_site_activity(facility, sincedate):
+    activity = 0
+    for doc in facility.docs:
+        if doc.latest_date > sincedate:
+            activity += 1
+    return activity
+
+
 def get_sites_with_activity(sitelist, sincedate=datetime.date(2018, 1, 1)):
     sites_by_activity = []
     for site in sitelist:
-        activity = len([x for x in site.docs if x.file_date > sincedate or x.crawl_date > sincedate])
-        if not activity:
-            continue
-        else:
+        activity = tally_site_activity(site, sincedate)
+        if activity > 0:
             sites_by_activity.append((activity, site))
     sites_by_activity.sort()
     sites_by_activity.reverse()
@@ -1513,14 +1550,14 @@ def get_doc_date(doc):
 
 
 def get_latest_activity(facility):
-    docs = sorted(facility.docs, key=get_doc_date)
-    docs.reverse()
-    latest = docs[0].file_date
+    latest = facility.docs.latest_date
     return latest.isoformat()
 
 
 def get_docs_since(facility, reference_date):
-    activity = []
+    activity = DocumentCollection()
+    if facility.docs.latest_date < reference_date:
+        return activity
     for doc in facility.docs:
         date = get_doc_date(doc)
         if date >= reference_date:
