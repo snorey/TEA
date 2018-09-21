@@ -160,8 +160,6 @@ class Facility:  # data structure
         if parent is not None:
             self.parent = parent
             self.zip = parent.zip
-        else:
-            print "No parent!", self.vfc_name
         if date is not None:
             self.date = date
         else:
@@ -180,6 +178,20 @@ class Facility:  # data structure
         if not self.downloaded_filenames:
             self.downloaded_filenames = self.get_downloaded_docs()
         self.docs_from_directory()
+
+    def __eq__(self, other):
+        return hash(self) == hash(other)
+
+    def __lt__(self, other):
+        return self.vfc_id < other.vfc_id
+
+    def __hash__(self):
+        return hash(self.identity)
+
+    @property
+    def identity(self):
+        identity = self.vfc_id
+        return identity
 
     def retrieve_page_if_missing(self):
         if not self.page:
@@ -298,7 +310,7 @@ class Facility:  # data structure
         filepath = os.path.join(self.directory, filename)
         page = open(filepath).read()
         crawl_date = date_from_iso(crawl_date_iso)
-        page_docs = self.docs_from_page(page, crawl_date=crawl_date, skip_ids=self.docs.ids)
+        page_docs = self.docs_from_page(page, crawl_date=crawl_date)
         return page_docs
 
     @staticmethod
@@ -911,21 +923,24 @@ class FacilityCollection(list):
         super(FacilityCollection, self).__init__(*args)
         self.iddic = {}
         self.namedic = collections.defaultdict(list)
+        self.items = set()
         self.recalculate()
 
     def validate_item(self, obj):
         if not isinstance(obj, Facility):
-            return False
-        elif obj in self:
+            raise TypeError
+        elif obj in self.items:
             return False
         else:
             return True
 
     def recalculate(self):
         self.remove_extras()
-        self.iddic = dict([(x.vfc_id, x) for x in self])
+        self.items = set(self)
+        self.iddic = {}
         self.namedic = collections.defaultdict(list)
-        for facility in self:
+        for facility in self.items:
+            self.iddic[facility.vfc_id] = facility
             self.namedic[facility.vfc_name].append(facility)
 
     def do_addition(self, obj):

@@ -11,6 +11,7 @@ class DocumentCollectionTestCase(unittest.TestCase):
         self.doc100 = idem.Document(id="100")
         self.new_document = idem.Document(id="300", type="foo", program="bar")
         self.new_list = [idem.Document(id="400"), idem.Document(id="500"), idem.Document(id="600")]
+        self.bad_item = idem.Facility()  # class mismatch
 
     def tearDown(self):
         self.collection = None
@@ -37,23 +38,76 @@ class DocumentCollectionTestCase(unittest.TestCase):
     def test_does_not_validate_duplicate(self):
         self.assertFalse(self.collection.validate_item(self.doc100))
 
-    def extends_valid_list(self):
+    def test_extends_valid_list(self):
         collection = idem.DocumentCollection(self.document_list)
         length1 = len(collection)
         collection.extend(self.new_list)
         length2 = len(collection)
         self.assertEqual(length2, length1 + len(self.new_list))
 
-    def does_not_extend_invalid_list(self):
+    def test_does_not_extend_invalid_list(self):
         bad_list = [1, 2, 3]
         length1 = len(self.collection)
         self.collection.extend(bad_list)
         length2 = len(self.collection)
         self.assertEqual(length1, length2)
 
-    def validates_items_at_init(self):
-        bad_item = idem.Facility()  # class mismatch
-        self.assertRaises(TypeError, idem.DocumentCollection, [bad_item])
+    def test_validates_items_at_init(self):
+        self.assertRaises(TypeError, idem.DocumentCollection, [self.bad_item])
+
+
+class FacilityCollectionTestCase(unittest.TestCase):
+
+    def setUp(self):
+        self.facility_list = [idem.Facility(), idem.Facility(vfc_id="100"), idem.Facility(vfc_id="200"),
+                              idem.Facility(vfc_id="100")]
+        self.collection = idem.FacilityCollection(self.facility_list)
+        self.fac100 = idem.Facility(vfc_id="100")
+        self.new_fac = idem.Facility(id="300", vfc_name="Argle Bargle")
+        self.new_list = [idem.Facility(vfc_id="400"), idem.Facility(vfc_id="500"), idem.Facility(vfc_id="600")]
+        self.bad_item = idem.Document()  # class mismatch
+        self.bad_list = [1, 2, 3]
+
+    def tearDown(self):
+        self.collection = None
+        self.facility_list = None
+
+    def test_duplicates_deleted_on_creation(self):
+        length = len(self.facility_list)
+        collection = idem.FacilityCollection(self.facility_list)
+        self.assertEqual(len(collection), length-1)
+
+    def test_removes_deleted_item(self):
+        length = len(self.collection)
+        self.collection.remove(idem.Facility())
+        self.assertEqual(len(self.collection), length-1)
+
+    def test_non_document_raises_TypeError(self):
+        self.assertRaises(TypeError, self.collection.append, "document")
+
+    def test_updates_types(self):
+        self.collection.append(self.new_fac)
+        self.assertTrue(self.new_fac.vfc_id in self.collection.iddic.keys())
+        self.assertTrue(self.new_fac.vfc_name in self.collection.namedic.keys())
+
+    def test_does_not_validate_duplicate(self):
+        self.assertFalse(self.collection.validate_item(self.fac100))
+
+    def test_extends_valid_list(self):
+        collection = idem.FacilityCollection(self.facility_list)
+        length1 = len(collection)
+        collection.extend(self.new_list)
+        length2 = len(collection)
+        self.assertEqual(length2, length1 + len(self.new_list))
+
+    def test_does_not_extend_invalid_list(self):
+        length1 = len(self.collection)
+        self.collection.extend(self.bad_list)
+        length2 = len(self.collection)
+        self.assertEqual(length1, length2)
+
+    def test_validates_items_at_init(self):
+        self.assertRaises(TypeError, idem.FacilityCollection, [self.bad_item])
 
 
 if __name__ == '__main__':
