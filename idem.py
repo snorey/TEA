@@ -455,7 +455,7 @@ class Facility:  # data structure
     @property
     def ecm_url(self):
         starturl = idem_settings.ecm_domain \
-                   + "/cs/idcplg?IdcService=GET_SEARCH_RESULTS"\
+                   + "/cs/idcplg?IdcService=GET_SEARCH_RESULTS&QueryText=xAIID+%3Ccontains%3E+`"\
                    + self.vfc_id \
                    + "`&listTemplateId=SearchResultsIDEM&searchFormType=standard" \
                    + "&SearchQueryFormat=UNIVERSAL&ftx=&AdvSearch=True&ResultCount=" \
@@ -888,6 +888,7 @@ class DocumentCollection(list):
         self.programs.add(document.program)
         self.types.add(document.type)
         self.ids.add(document.id)
+        self.items.add(document)
         self.namedic[document.filename] = document
         self.update_dates(document)
 
@@ -1163,7 +1164,6 @@ class ZipCycler:
     def cycle(self, do_all=False):
         for current_zip in self.zips:  # avoid holding multiple updaters in memory
             updater = ZipUpdater(current_zip)
-            print current_zip, len(updater.facilities)
             for facility in updater.facilities:
                 if do_all or facility.whether_to_update:
                     self.update_facility(facility)
