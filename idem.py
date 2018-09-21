@@ -1690,7 +1690,7 @@ def build_json_props(facility, reference_date=None):
     props = {
         "name": facility.vfc_name,
         "address": facility.vfc_address,
-        "latest activity": get_latest_activity(facility),
+        "latest_activity": get_latest_activity(facility),
         "programs": facility.programs,
         "popupContent": popup,
     }
@@ -1903,7 +1903,9 @@ def do_cron():
     do_cycle()
     collection = setup_collection()
     save_active_sites_as_json(collection, lookback=7)
+    tea_core.do_cron()
     return collection
+
 
 
 if __name__ == "__main__":

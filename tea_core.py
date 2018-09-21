@@ -645,3 +645,7 @@ def get_daily_filepath(suffix, date=None, directory=idem_settings.maindir, docty
     filename = pattern % (doctype, isodate, suffix)
     filepath = os.path.join(directory, filename)
     return filepath
+
+
+def do_cron():
+    update_all_local_directories()
