@@ -486,7 +486,7 @@ class Facility:  # data structure
 
     @property
     def whether_to_update(self):
-        maximum_days = 100
+        maximum_days = 150
         magic_ratio = 4
         sincecheck = self.since_last_check
         if self.latest_file_date:
