@@ -45,12 +45,9 @@ class DocumentCollectionTestCase(unittest.TestCase):
         length2 = len(collection)
         self.assertEqual(length2, length1 + len(self.new_list))
 
-    def test_does_not_extend_invalid_list(self):
+    def test_raises_TypeError_for_invalid_list(self):
         bad_list = [1, 2, 3]
-        length1 = len(self.collection)
-        self.collection.extend(bad_list)
-        length2 = len(self.collection)
-        self.assertEqual(length1, length2)
+        self.assertRaises(TypeError, self.collection.extend, bad_list)
 
     def test_validates_items_at_init(self):
         self.assertRaises(TypeError, idem.DocumentCollection, [self.bad_item])
@@ -72,41 +69,38 @@ class FacilityCollectionTestCase(unittest.TestCase):
         self.collection = None
         self.facility_list = None
 
-    def test_duplicates_deleted_on_creation(self):
+    def test_fc_duplicates_deleted_on_creation(self):
         length = len(self.facility_list)
         collection = idem.FacilityCollection(self.facility_list)
         self.assertEqual(len(collection), length-1)
 
-    def test_removes_deleted_item(self):
+    def test_fc_removes_deleted_item(self):
         length = len(self.collection)
         self.collection.remove(idem.Facility())
         self.assertEqual(len(self.collection), length-1)
 
-    def test_non_document_raises_TypeError(self):
+    def test_fc_non_document_raises_TypeError(self):
         self.assertRaises(TypeError, self.collection.append, "document")
 
-    def test_updates_types(self):
+    def test_fc_updates_types(self):
         self.collection.append(self.new_fac)
         self.assertTrue(self.new_fac.vfc_id in self.collection.iddic.keys())
         self.assertTrue(self.new_fac.vfc_name in self.collection.namedic.keys())
 
-    def test_does_not_validate_duplicate(self):
+    def test_fc_does_not_validate_duplicate(self):
         self.assertFalse(self.collection.validate_item(self.fac100))
 
-    def test_extends_valid_list(self):
+    def test_fc_extends_valid_list(self):
         collection = idem.FacilityCollection(self.facility_list)
         length1 = len(collection)
         collection.extend(self.new_list)
         length2 = len(collection)
         self.assertEqual(length2, length1 + len(self.new_list))
 
-    def test_does_not_extend_invalid_list(self):
-        length1 = len(self.collection)
-        self.collection.extend(self.bad_list)
-        length2 = len(self.collection)
-        self.assertEqual(length1, length2)
+    def test_fc_raises_TypeError_for_invalid_list(self):
+        self.assertRaises(TypeError, self.collection.extend, self.bad_list)
 
-    def test_validates_items_at_init(self):
+    def test_fc_validates_items_at_init(self):
         self.assertRaises(TypeError, idem.FacilityCollection, [self.bad_item])
 
 
