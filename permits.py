@@ -511,28 +511,10 @@ def active_permits_to_geojson(documents, county=None):
     features = []
     for doc in documents:
         new_feature = doc_to_geojson(doc)
-        features.append(new_feature)
+        if new_feature is not None:
+            features.append(new_feature)
     collection = geojson.FeatureCollection(features)
     return collection
-
-
-def build_permit_table(tsv):
-    newtable = '<h3>New permit notices</h3>\n<table><tr><th colspan="3">New notices today</th></tr>'
-    newtable += '\n<tr><th width="30%">Site</th><th>Document</th><th width="30%">Dates</th></tr>'
-    lines = tsv.split("\n")
-    lines = filter(lambda x: x.strip(), lines)
-    lines = filter(lambda x: "\t" in x, lines)
-    for line in lines:
-        if line.count("\t") != 6:
-            print "Error! %d tabs" % line.count("\t")
-        site, doctype, url, pm, permitnum, county, dates = line.split("\t")
-        newrow = "\n<tr>%s%s</tr>"
-        sitecell = '<td><a href="%s">%s (%s County)</a></td>' % (url, site, county)
-        datecell = "<td>%s</td>" % dates
-        newrow = newrow % (sitecell, datecell)
-        newtable += newrow
-    newtable += "</table>"
-    return newtable
 
 
 def ids_to_facilities(ids):
