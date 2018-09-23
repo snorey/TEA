@@ -134,7 +134,7 @@ class Facility:  # data structure
     state = ""
     zip = ""
     full_address = ""
-    google_address = ""
+    latlong_address = ""
     vfc_id = ""
     vfc_url = ""
     directory = ""
@@ -230,7 +230,7 @@ class Facility:  # data structure
         else:
             return False
 
-    def set_directory(self, directory=None):
+    def set_directory(self, directory=None, create=True):
         if directory:
             self.directory = directory
         elif self.parent is not None:
@@ -239,8 +239,9 @@ class Facility:  # data structure
             self.directory = self.vfc_id
         else:
             return ""
-        if not os.path.isdir(self.directory):
-            os.mkdir(self.directory)
+        if create:
+            if not os.path.isdir(self.directory):
+                os.mkdir(self.directory)
         return self.directory
 
     def from_row(self):
@@ -471,14 +472,14 @@ class Facility:  # data structure
         else:
             result = coord_from_address(self.full_address)
             try:
-                lat, lon, googleaddress = result
+                lat, lon, address = result
             except TypeError, e:  # returned False?
                 print str(e)
                 print str(result)[:100]
                 return False
             else:
                 self.latlong = (float(lat), float(lon))
-                self.google_address = googleaddress
+                self.latlong_address = address
                 return self.latlong
 
     @property
@@ -498,6 +499,42 @@ class Facility:  # data structure
         elif sincenewfile / sincecheck > magic_ratio:
             should_update = False
         return should_update
+    
+    def serialize_attributes(self, show=False):
+        sequence = ("vfc_id", "vfc_name", "real_name", "vfc_address", "city", "county", "state", "zip", "latlong",
+                    "latlong_address")
+        if show is True:
+            for attribute in sequence:
+                value = getattr(self, attribute)
+                print attribute, value
+        return sequence
+    
+    def to_tsv(self):
+        sequence = self.serialize_attributes()
+        tsv = ""
+        for attribute in sequence:
+            if hasattr(self, attribute):
+                value = getattr(self, attribute)
+                if not value:
+                    value = ""
+                else:
+                    value = str(value)
+            else:
+                value = ""
+            tsv += value + "\t"
+        tsv += "\n"
+        return tsv
+
+    def from_tsv(self, tsv_line=""):
+        sequence = self.serialize_attributes()
+        pieces = tsv_line.split("\t")
+        length = min(len(sequence), len(pieces))
+        for index in range(0, length):
+            attribute = sequence[index]
+            value = pieces[index]
+            if attribute == "latlong" and value != "":
+                value = destring_latlong_pair(value)
+            setattr(self, attribute, value)
 
 
 class ZipUpdater:
@@ -1068,7 +1105,7 @@ class ZipCollection(list):
     def generate_facility_line(self, facility):
         facility_id = facility.vfc_id
         name = facility.vfc_name
-        address = facility.google_address
+        address = facility.latlong_address
         lat, lon = self.stringify_latlong(facility.latlong)
         data = [facility_id, name, lat, lon, address]
         line = "\t".join(data)
@@ -1089,18 +1126,19 @@ class ZipCollection(list):
             lon = ""
         return lat, lon
 
+    def assign_geodata_from_line(self, line):
+        facility_id, name, latlong, address = process_location_line(line)
+        if facility_id not in self.iddic.keys():
+            return
+        facility = self.iddic[facility_id]
+        facility.latlong = latlong
+        facility.latlong_address = address
+
     def reload_latlongs(self, filepath=latlong_filepath):
         for line in open(filepath):
             if not line.strip() or "\t" not in line:
                 continue
             self.assign_geodata_from_line(line)
-
-    def assign_geodata_from_line(self, line):
-        facility_id, name, latlong, address = process_location_line(line)
-        facility = self.iddic[facility_id]
-        facility.latlong = latlong
-        facility.google_address = address
-        return facility
 
     def get_all_docs_in_range(self, start_date, end_date):
         """
@@ -1195,7 +1233,7 @@ class ZipCycler:
         if facility_id in self.ids:
             facility = self.iddic[facility_id]
             facility.latlong = latlong
-            facility.google_address = address
+            facility.latlong_address = address
 
 
 def process_location_line(line):
@@ -1231,6 +1269,12 @@ def destring_latlong(latstring, lonstring):
         lat = float(latstring)
         lon = float(lonstring)
         latlong = (lat, lon)
+    return latlong
+
+
+def destring_latlong_pair(latlongstring):
+    latlong = tuple(latlongstring[1:-1].split(", "))
+    latlong = destring_latlong(latlong[0], latlong[1])
     return latlong
 
 
@@ -1690,7 +1734,7 @@ def build_json_props(facility, reference_date=None):
     props = {
         "name": facility.vfc_name,
         "address": facility.vfc_address,
-        "latest_activity": get_latest_activity(facility),
+        "latestActivity": get_latest_activity(facility),
         "programs": facility.programs,
         "popupContent": popup,
     }
