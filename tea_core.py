@@ -4,7 +4,7 @@ import idem_settings
 import os
 import re
 import shapefile  # pip install pyshp
-from shapely.geometry import mapping, Polygon, Point  # pip install shapely
+from shapely.geometry import mapping, Polygon, Point, MultiPoint  # pip install shapely
 import time
 import urllib
 import urllib2
@@ -507,6 +507,32 @@ def setup_locality(placename, polygon, main_directory=None):
         print result
 
 
+def get_poly(zipcode, zippath=None, for_leaflet=True):
+    if zippath is None:
+        zippath = idem_settings.zippath
+    r = shapefile.Reader(zippath)
+    rex = [x for x in r.shapeRecords() if x.record[0]==zip]
+    print zipcode, len(rex)
+    points = []
+    for rec in rex:
+        points.extend(rec.shape.points)
+    if not points or len(points) < 3:
+        return
+    latlongs = convert_list_to_latlong(points)
+    if for_leaflet:
+        latlongs = [tuple(reversed(x)) for x in latlongs]
+    poly = MultiPoint(latlongs).envelope
+    return poly
+
+
+def recalculate_zips(zips=idem_settings.lake_zips):
+    polys = [(x, get_poly(x)) for x in zips]
+    for zipcode, poly in polys:
+        if poly is None:
+            continue
+        setup_locality(zipcode, poly)
+
+
 def get_json_paths(date=None):
     import idem
     import enforcement
@@ -649,3 +675,6 @@ def get_daily_filepath(suffix, date=None, directory=idem_settings.maindir, docty
 
 def do_cron():
     update_all_local_directories()
+
+if __name__ == "__main__":
+    do_cron()
