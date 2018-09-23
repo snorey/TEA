@@ -286,8 +286,10 @@ def convert_point_to_latlong(coords):
     return lat, lon
 
 
-def convert_list_to_latlong(points):
+def convert_list_to_latlong(points, reverse=False):
     converted = [convert_point_to_latlong(x) for x in points]
+    if reverse:
+        converted = reverse_coords(converted)
     return converted
 
 
@@ -507,26 +509,29 @@ def setup_locality(placename, polygon, main_directory=None):
         print result
 
 
-def get_poly(zipcode, zippath=None, for_leaflet=True):
+def get_poly_for_zip(zipcode, zippath=None, for_leaflet=True):
     if zippath is None:
         zippath = idem_settings.zippath
     r = shapefile.Reader(zippath)
-    rex = [x for x in r.shapeRecords() if x.record[0]==zip]
-    print zipcode, len(rex)
-    points = []
-    for rec in rex:
-        points.extend(rec.shape.points)
-    if not points or len(points) < 3:
-        return
-    latlongs = convert_list_to_latlong(points)
-    if for_leaflet:
-        latlongs = [tuple(reversed(x)) for x in latlongs]
-    poly = MultiPoint(latlongs).envelope
+    records = [x for x in r.shapeRecords() if x.record[0]==zipcode]
+    print zipcode, len(records)
+    if len(records) == 1:
+        points = records[0].shape.points
+        latlongs = convert_list_to_latlong(points, reverse=True)
+        poly = Polygon(latlongs)
+    else:
+        points = []
+        for rec in records:
+            points.extend(rec.shape.points)
+        if not points or len(points) < 3:
+            return
+        latlongs = convert_list_to_latlong(points, reverse=True)
+        poly = MultiPoint(latlongs).envelope
     return poly
 
 
 def recalculate_zips(zips=idem_settings.lake_zips):
-    polys = [(x, get_poly(x)) for x in zips]
+    polys = [(x, get_poly_for_zip(x)) for x in zips]
     for zipcode, poly in polys:
         if poly is None:
             continue
