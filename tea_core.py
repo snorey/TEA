@@ -155,9 +155,11 @@ class Document(object):
         else:
             return self.crawl_date
 
-    def retrieve_patiently(self, path=""):
+    def retrieve_patiently(self, path="", url=None):
         if not path:
             path = self.path
+        if url is None:
+            url = self.url
         done = False
         inc = 0
         while not done:
@@ -166,7 +168,7 @@ class Document(object):
                 print "Aborting!"
                 return False
             try:
-                urllib.urlretrieve(self.url, path)
+                urllib.urlretrieve(url, path)
             except Exception, e:
                 print str(e)
                 time.sleep(DEFAULT_WAIT_AFTER_ERROR)
@@ -183,11 +185,15 @@ class Document(object):
         pass
 
 
-def assign_values(obj, arguments, tolerant=True):
+def assign_values(obj, arguments, tolerant=True, cautious=True):
     for key, value in arguments.items():
         if not tolerant:  # if accept unicode and string only
             if not isinstance(value, basestring):
                 print "Ignoring value %s for %s" % (str(value), str(key))
+                continue
+        if cautious:
+            if not hasattr(obj, key):
+                print "Ignoring value %s for %s, not in object properties" % (str(value), str(key))
                 continue
         setattr(obj, key, value)
 
