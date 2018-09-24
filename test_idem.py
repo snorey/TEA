@@ -100,7 +100,7 @@ class FacilityCollectionTestCase(unittest.TestCase):
                               idem.Facility(vfc_id="100")]
         self.collection = idem.FacilityCollection(self.facility_list)
         self.fac100 = idem.Facility(vfc_id="100")
-        self.new_fac = idem.Facility(id="300", vfc_name="Argle Bargle")
+        self.new_fac = idem.Facility(vfc_id="300", vfc_name="Argle Bargle")
         self.new_list = [idem.Facility(vfc_id="400"), idem.Facility(vfc_id="500"), idem.Facility(vfc_id="600")]
         self.bad_item = idem.Document()  # class mismatch
         self.bad_list = [1, 2, 3]
@@ -123,7 +123,7 @@ class FacilityCollectionTestCase(unittest.TestCase):
         self.assertRaises(TypeError, self.collection.append, "document")
 
     def test_fc_updates_names_and_ids(self):
-        new_fac = idem.Facility(id="300", vfc_name="Argle Bargle")
+        new_fac = idem.Facility(vfc_id="300", vfc_name="Argle Bargle")
         self.collection.append(new_fac)
         self.assertTrue(new_fac.vfc_id in self.collection.iddic.keys())
         self.assertTrue(new_fac.vfc_name in self.collection.namedic.keys())
