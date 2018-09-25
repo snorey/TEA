@@ -36,7 +36,9 @@ latest_json_path = os.path.join(idem_settings.websitedir, "latest_vfc.json")
 
 
 class Thing(object):
-
+"""
+Basic meta-class for documents/facilities/etc; not to be invoked directly.
+"""
     attribute_sequence = ("property1", "property2", "property3")
 
     def __init__(self, tsv=None, *args):
