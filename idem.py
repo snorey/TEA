@@ -35,7 +35,40 @@ latlong_filepath = os.path.join(idem_settings.maindir, "facilitydump.txt")
 latest_json_path = os.path.join(idem_settings.websitedir, "latest_vfc.json")
 
 
-class Document:
+class Thing(object):
+
+    attribute_sequence = ("property1", "property2", "property3")
+
+    def __init__(self, tsv=None, *args):
+        super(Thing, self).__init__()
+        if tsv is not None:
+            self.from_tsv(tsv)
+
+    def from_tsv(self, tsv_line=""):
+        pieces = tsv_line.split("\t")
+        length = min(len(self.attribute_sequence), len(pieces))
+        for index in range(0, length):
+            attribute = self.attribute_sequence[index]
+            value = pieces[index]
+            setattr(self, attribute, value)
+
+    def to_tsv(self):
+        tsv = ""
+        for attribute in self.attribute_sequence:
+            if hasattr(self, attribute):
+                value = getattr(self, attribute)
+                if not value:
+                    value = ""
+                else:
+                    value = str(value)
+            else:
+                value = ""
+            tsv += value + "\t"
+        tsv += "\n"
+        return tsv
+
+
+class Document(Thing):
     url = ""
     crawl_date = None
     file_date = None
@@ -47,17 +80,15 @@ class Document:
     row = ()
     size = 0
     session = None
+    attribute_sequence = ("id", "url", "crawl_date", "file_date", "type", "program", "filename", "size", "local_path",
+                          "facility_id")
 
-    def __init__(self,
-                 row=None,
-                 build=False,
-                 **kwargs):
+    def __init__(self, row=None, build=False, tsv=None, **kwargs):
+        super(Document, self).__init__(tsv=tsv)
         if row is not None and build is not False:
             self.row = row
             self.from_oldstyle_row(row)
-        for key, value in kwargs.items():
-            if hasattr(self, key):
-                setattr(self, key, value)
+        tea_core.assign_values(self, kwargs)
 
     def __eq__(self, other):
         if self.filename:
@@ -98,7 +129,7 @@ class Document:
     def from_oldstyle_row(self, row):
         relative_url, self.id, month, date, year, self.program, self.type, self.size = row
         self.file_date = datetime.date(int(year), int(month), int(date))
-        domain = "https://ecm.idem.in.gov"
+        domain = idem_settings.ecm_domain
         self.url = domain + relative_url
 
     def retrieve_file_patiently(self, maxtries=10):
@@ -115,16 +146,16 @@ class Document:
                     shutil.copyfileobj(response.raw, out_file)
             except Exception, e:
                 print str(e)
-                time.sleep(30)
+                time.sleep(tea_core.DEFAULT_WAIT_AFTER_ERROR)
             else:
                 del response
                 done = True
                 print "Download complete"
-                time.sleep(3)
+                time.sleep(tea_core.DEFAULT_WAIT)
         return True
 
 
-class Facility:  # data structure
+class Facility(Thing):  # data structure
     row = ""
     vfc_name = ""
     vfc_address = ""
@@ -143,13 +174,17 @@ class Facility:  # data structure
     resultcount = 20
     worry_about_crawl_date = True
     filenamedic = None
+    attribute_sequence = ("vfc_id", "vfc_name", "real_name", "vfc_address", "city", "county", "state", "zip", "latlong",
+                          "latlong_address", "directory")
 
-    def __init__(self, row=None, parent=None, directory=None, date=None, vfc_id=None, retrieve=False, **arguments):
+    def __init__(self, row=None, parent=None, directory=None, date=None, vfc_id=None, retrieve=False, tsv=None,
+                 **arguments):
+        super(Facility, self).__init__(tsv=tsv)
         self.updated_docs = set()
         self.downloaded_filenames = set()
         self.session = requests.Session()
         self.docs = DocumentCollection()
-        if vfc_id is not False:
+        if vfc_id:
             self.vfc_id = vfc_id
         if row:  # overrides vfc_id if set
             self.row = row
@@ -163,7 +198,7 @@ class Facility:  # data structure
             self.date = datetime.date.today()
         self.set_directory(directory=directory)
         if arguments:
-            tea_core.assign_values(self, arguments, tolerant=True)
+            tea_core.assign_values(self, arguments, tolerant=True, cautious=True)
         self.downloaded_filenames = self.get_downloaded_docs()
         if self.directory:
             self.since_last_check = since_last_scan(self.directory)
@@ -250,6 +285,16 @@ class Facility:  # data structure
         self.vfc_url = "http://vfc.idem.in.gov/DocumentSearch.aspx?xAIID=" + self.vfc_id
         self.full_address = self.vfc_address + ", " + self.city + self.zip
 
+    def docs_from_directory(self):
+        if not self.directory:
+            return
+        filenames = os.listdir(self.directory)
+        if self.worry_about_crawl_date:
+            self.docs = self.docs_from_pages(filenames)
+        else:
+            self.get_latest_page()
+            self.docs = self.docs_from_page(self.page)
+
     def docs_from_page(self, page, crawl_date=None):
         # pattern for older (pre-Aug 2018) pages
         docs = DocumentCollection()
@@ -279,15 +324,16 @@ class Facility:  # data structure
         docs.sort()
         return docs
 
-    def docs_from_directory(self):
-        if not self.directory:
-            return
-        filenames = os.listdir(self.directory)
-        if self.worry_about_crawl_date:
-            self.docs = self.docs_from_pages(filenames)
-        else:
-            self.get_latest_page()
-            self.docs = self.docs_from_page(self.page)
+    def filename_to_docs(self, filename):
+        datecatcher = re.search("\d\d\d\d-\d\d-\d\d", filename)
+        if datecatcher is None:
+            return []
+        crawl_date_iso = datecatcher.group(0)
+        filepath = os.path.join(self.directory, filename)
+        page = open(filepath).read()
+        crawl_date = date_from_iso(crawl_date_iso)
+        page_docs = self.docs_from_page(page, crawl_date=crawl_date)
+        return page_docs
 
     def docs_from_pages(self, filenames):
         all_docs = DocumentCollection()
@@ -302,14 +348,6 @@ class Facility:  # data structure
                 else:
                     all_docs.append(doc)
         return all_docs
-
-    def filename_to_docs(self, filename):
-        crawl_date_iso = re.search("\d\d\d\d-\d\d-\d\d", filename).group(0)
-        filepath = os.path.join(self.directory, filename)
-        page = open(filepath).read()
-        crawl_date = date_from_iso(crawl_date_iso)
-        page_docs = self.docs_from_page(page, crawl_date=crawl_date)
-        return page_docs
 
     @staticmethod
     def get_info_from_old_style_rows(page):
@@ -499,67 +537,36 @@ class Facility:  # data structure
         elif sincenewfile / sincecheck > magic_ratio:
             should_update = False
         return should_update
-    
-    def serialize_attributes(self, show=False):
-        sequence = ("vfc_id", "vfc_name", "real_name", "vfc_address", "city", "county", "state", "zip", "latlong",
-                    "latlong_address")
-        if show is True:
-            for attribute in sequence:
-                value = getattr(self, attribute)
-                print attribute, value
-        return sequence
-    
-    def to_tsv(self):
-        sequence = self.serialize_attributes()
-        tsv = ""
-        for attribute in sequence:
-            if hasattr(self, attribute):
-                value = getattr(self, attribute)
-                if not value:
-                    value = ""
-                else:
-                    value = str(value)
-            else:
-                value = ""
-            tsv += value + "\t"
-        tsv += "\n"
-        return tsv
 
     def from_tsv(self, tsv_line=""):
-        sequence = self.serialize_attributes()
-        pieces = tsv_line.split("\t")
-        length = min(len(sequence), len(pieces))
-        for index in range(0, length):
-            attribute = sequence[index]
-            value = pieces[index]
-            if attribute == "latlong" and value != "":
-                value = destring_latlong_pair(value)
-            setattr(self, attribute, value)
+        super(Facility, self).from_tsv(tsv_line)
+        if self.latlong:
+            self.latlong = destring_latlong_pair(self.latlong)
 
 
 class ZipUpdater:
 
-    def __init__(self, zipcode, **arguments):
+    def __init__(self, zipcode, create=True, **arguments):
         self.zip = zipcode
         self.html = ""
+        self.count = 0
         self.whether_download = True
         self.whether_update_zip_info = True
         self.whether_update_facility_info = True
         self.worry_about_crawl_date = True
-        self.offline = False
         self.firsttime = True
+        self.offline = False
         self.directory = os.path.join(maindir, zipcode)
         self.date = datetime.date.today()
         self.zipurl = build_zip_url(zipcode)
-        try:
-            os.mkdir(self.directory)
-        except OSError:  # directory exists
-            pass
+        if create:
+            if not os.path.exists(self.directory):
+                os.mkdir(self.directory)
         tea_core.assign_values(self, arguments, tolerant=True)
         self.page = get_latest_zip_page(self.zip, zipdir=self.directory)
-        self.facilities = self.get_facilities_from_page(self.page)
-        self.siteids = [(x.vfc_id, x) for x in self.facilities]
-        self.sites_by_siteid = dict(self.siteids)
+        self.facilities = FacilityCollection()
+        self.get_facilities_from_page(self.page)
+        self.sites_by_siteid = self.facilities.iddic
         self.session = requests.Session()
         self.current_facility = None
         self.updated_facilities = []
@@ -580,8 +587,7 @@ class ZipUpdater:
     def update_info(self):
         print "Updating ZIP info"
         self.retrieve_zip_page()
-        self.facilities = self.get_facilities_from_page(self.page)
-        self.sites_by_siteid = dict(map(lambda x: (x.vfc_id, x), self.facilities))
+        self.get_facilities_from_page(self.page)
 
     def get_active_sites(self, lookback=7):
         sincedate = get_reference_date(lookback)
@@ -620,26 +626,12 @@ class ZipUpdater:
         nextpage = get_page_patiently(nexturl, session=self.session)
         return nextpage
 
-    def refresh_siteids(self):
-        siteids = sorted(self.sites_by_siteid.keys())
-        self.siteids = siteids
-        return siteids
-
-    def get_updated_facilities(self):
-        self.refresh_siteids()
-        self.updated_facilities = []
-        for site_id in self.siteids:
-            self.handle_facility(site_id)
-        return self.updated_facilities
-
-    def handle_facility(self, site_id):
-        facility = self.sites_by_siteid[site_id]
-        self.current_facility = facility
-        if self.whether_update_facility(facility):
-            self.update_facility(facility)
+    def show_progress(self):
+        progress = "%d/%d" % (self.count, len(self.facilities.ids))
+        print self.current_facility.vfc_name, self.current_facility.vfc_id, progress
 
     def update_facility(self, facility):
-        self.show_progress(facility.vfc_id)
+        self.show_progress()
         self.fetch_facility_docs()
         time.sleep(tea_core.DEFAULT_SHORT_WAIT)
         if facility.updated_docs:
@@ -648,9 +640,19 @@ class ZipUpdater:
             if self.whether_download is True:
                 time.sleep(tea_core.DEFAULT_WAIT)
 
-    def show_progress(self, site_id):
-        progress = "%d/%d" % (self.siteids.index(site_id) + 1, len(self.siteids))
-        print self.current_facility.vfc_name, self.current_facility.vfc_id, progress
+    def handle_facility(self, site_id):
+        facility = self.sites_by_siteid[site_id]
+        self.current_facility = facility
+        if self.whether_update_facility(facility):
+            self.update_facility(facility)
+
+    def get_updated_facilities(self):
+        self.updated_facilities = []
+        self.count = 0
+        for site_id in self.facilities.ids:
+            self.count += 1
+            self.handle_facility(site_id)
+        return self.updated_facilities
 
     def whether_update_facility(self, facility):  # todo: harmonize with facility.whether_to_update()
         should_update = True
@@ -700,10 +702,7 @@ class ZipUpdater:
 
     def reconstruct_site_list(self):
         self.page = get_latest_zip_page(self.zip, zipdir=self.directory)
-        sites_from_page = self.get_facilities_from_page(self.page)
-        siteids = dict(map(lambda x: (x.vfc_id, x), sites_from_page))
-        self.sites_by_siteid = siteids
-        return siteids
+        self.get_facilities_from_page(self.page)
 
     def get_downloaded_docs(self):
         already = self.current_facility.get_downloaded_docs()
@@ -738,11 +737,8 @@ class ZipUpdater:
 
     def check_and_make_facility_directory(self):
         self.current_facility.directory = os.path.join(self.directory, self.current_facility.vfc_id)
-        try:
+        if os.path.exists(self.current_facility.directory):
             os.mkdir(self.current_facility.directory)
-        except OSError:
-            pass
-        else:
             self.firsttime = True  # if directory not created, we know it hasn't been checked before
         return self.current_facility.directory
 
@@ -813,11 +809,11 @@ class ZipUpdater:
         return True
 
     def scan_site_for_premature(self, siteid):
-        if siteid not in self.sites_by_siteid.keys():
+        if siteid not in self.facilities.ids:
             print "%s not in keys!" % siteid
             return
-        self.current_facility = self.sites_by_siteid[siteid]
-        sitedir = os.path.join(self.directory, siteid)
+        self.current_facility = self.facilities.iddic[siteid]
+        sitedir = self.current_facility.directory
         whether_premature = scan_for_premature_stops(sitedir)
         if whether_premature:
             self.get_downloaded_docs()
@@ -842,8 +838,9 @@ class ZipUpdater:
         if page is None:
             page = self.page
         rows = self.get_valid_rows_from_page(page)
-        facilities = map(self.get_facility_from_row, rows)
-        return facilities
+        facility_list = map(self.get_facility_from_row, rows)
+        facilities = FacilityCollection(facility_list)
+        self.facilities.extend(facilities)
 
     def latlongify(self):
         for facility in self.facilities:
@@ -851,154 +848,43 @@ class ZipUpdater:
                 facility.latlongify()
             time.sleep(tea_core.DEFAULT_SHORT_WAIT)
 
+    def get_tsv_path(self):
+        filename = self.zip + ".tsv"
+        directory = self.directory
+        path = os.path.join(directory, filename)
+        return path
 
-class DocumentCollection(list):
-    """
-    Ordered collection of unique VFC documents.
-    """
-    def __init__(self, *args):
+    def load_tsv(self, path=None):
+        if path is None:
+            path = self.get_tsv_path()
+        tsv = open(path).read()
+        facilities = FacilityCollection(tsv=tsv)
+        self.facilities.extend(facilities)
+
+    def save_tsv(self, path=None):
+        if path is None:
+            path = self.get_tsv_path()
+        tsv = self.facilities.to_tsv()
+        handle = open(path, "w")
+        with handle:
+            handle.write(tsv)
+
+
+class ThingCollection(list):
+    type_of_thing = Thing
+
+    def __init__(self, iterator=None, tsv=None):
+        if iterator is None:
+            iterator = []
         self.items = set()
-        self.programs = set()
-        self.types = set()
-        self.ids = set()
-        self.namedic = {}
-        self.latest_file_date = None
-        self.latest_crawl_date = None
-        super(DocumentCollection, self).__init__(*args)
-        items = set(self)
-        for item in items:
-            self.validate_item(item)
-            self.remove_extra(item)
+        self.attribute_sequence = self.type_of_thing.attribute_sequence
+        super(ThingCollection, self).__init__(iterator)
+        if tsv is not None:
+            self.from_tsv(tsv)
         self.recalculate()
 
     def __delitem__(self, key):
-        super(DocumentCollection, self).__delitem__(key)
-        self.recalculate()
-
-    def remove_extra(self, item):
-        if self.count(item) > 1:
-            i = 0
-            count = 0
-            while i < len(self):
-                this_item = self[i]
-                if this_item == item:
-                    count += 1
-                    if count > 1:
-                        del self[i]
-                        continue  # do not increment, so as not to skip decremented next item
-                    else:
-                        i += 1
-                else:
-                    i += 1
-
-    def recalculate(self):
-        self.items = set(self)
-        self.programs = set()
-        self.types = set()
-        self.ids = set()
-        self.namedic = {}
-        for item in self.items:
-            self.do_addition(item)
-
-    def validate_item(self, obj):
-        if not isinstance(obj, Document):
-            raise TypeError
-        elif obj in self.items:
-            return False
-        else:
-            return True
-
-    def update_dates(self, document):
-        if not self.latest_file_date:
-            self.latest_file_date = document.file_date
-        elif document.file_date > self.latest_file_date:
-            self.latest_file_date = document.file_date
-        if not self.latest_crawl_date:
-            self.latest_crawl_date = document.crawl_date
-        elif document.crawl_date > self.latest_crawl_date:
-            self.latest_crawl_date = document.crawl_date
-
-    def do_addition(self, document):
-        self.programs.add(document.program)
-        self.types.add(document.type)
-        self.ids.add(document.id)
-        self.items.add(document)
-        self.namedic[document.filename] = document
-        self.update_dates(document)
-
-    def append(self, obj):
-        result = self.validate_item(obj)
-        if result is True:
-            super(DocumentCollection, self).append(obj)
-            self.do_addition(obj)
-
-    def extend(self, iterable):
-        iterable = [x for x in iterable if self.validate_item(x)]
-        super(DocumentCollection, self).extend(iterable)
-        for i in iterable:
-            self.do_addition(i)
-
-    @property
-    def latest_date(self):
-        dates = [self.latest_crawl_date, self.latest_file_date]
-        if all(dates):
-            return max(dates)
-        elif any(dates):
-            if dates[0]:
-                return dates[0]
-            else:
-                return dates[1]
-        else:
-            return None
-
-
-class FacilityCollection(list):
-
-    def __init__(self, *args):
-        super(FacilityCollection, self).__init__(*args)
-        self.iddic = {}
-        self.namedic = collections.defaultdict(list)
-        self.items = set()
-        items = set(self)
-        for item in items:  # todo: abstract into general DataCollection object
-            self.validate_item(item)
-            self.remove_extra_item(item)
-        self.recalculate()
-
-    def validate_item(self, obj):
-        if not isinstance(obj, Facility):
-            raise TypeError
-        elif obj in self.items:
-            return False
-        else:
-            return True
-
-    def recalculate(self):
-        self.remove_extras()
-        self.items = set(self)
-        self.iddic = {}
-        self.namedic = collections.defaultdict(list)
-        for facility in self.items:
-            self.iddic[facility.vfc_id] = facility
-            self.namedic[facility.vfc_name].append(facility)
-
-    def do_addition(self, obj):
-        self.iddic[obj.vfc_id] = obj
-        self.namedic[obj.vfc_name].append(obj)
-
-    def append(self, obj):
-        if self.validate_item(obj):
-            super(FacilityCollection, self).append(obj)
-            self.do_addition(obj)
-
-    def extend(self, iterable):
-        iterable = [x for x in iterable if self.validate_item(x)]
-        super(FacilityCollection, self).extend(iterable)
-        for i in iterable:
-            self.do_addition(i)
-
-    def __delitem__(self, key):
-        super(FacilityCollection, self).__delitem__(key)
+        super(ThingCollection, self).__delitem__(key)
         self.recalculate()
 
     def remove_extra_item(self, item):
@@ -1022,6 +908,171 @@ class FacilityCollection(list):
         for item in items:
             self.remove_extra_item(item)
 
+    def validate_item(self, obj):
+        if not isinstance(obj, self.type_of_thing):
+            raise TypeError
+        elif obj in self.items:
+            return False
+        else:
+            return True
+
+    def recalculate(self):
+        self.items = set(self)
+        for item in self.items:
+            self.validate_item(item)
+            self.remove_extra_item(item)
+
+    def do_addition(self, item):
+        pass  # placeholder to override in subclasses
+
+    def append(self, obj):
+        result = self.validate_item(obj)
+        if result is True:
+            super(ThingCollection, self).append(obj)
+            self.do_addition(obj)
+
+    def extend(self, iterable):
+        iterable = [x for x in iterable if self.validate_item(x)]
+        super(ThingCollection, self).extend(iterable)
+        for i in iterable:
+            self.do_addition(i)
+
+    def process_tsv_line(self, line):
+        if not line.strip():
+            return
+        new_thing = self.type_of_thing(tsv=line)
+        self.append(new_thing)
+
+    def from_tsv(self, tsv=None, path=None):
+        if tsv is None and path is None:
+            return
+        elif path:
+            tsv = open(path).read()
+        lines = tsv.split("\n")
+        if len(lines) < 2:
+            return
+        for line in lines[1:]:
+            self.process_tsv_line(line)
+
+    def to_tsv(self):
+        self.sort()
+        sequence = self.attribute_sequence
+        firstline = "\t".join(sequence)
+        tsv = firstline + "\n"
+        for thing in self:
+            new_tsv_line = thing.to_tsv()
+            tsv += new_tsv_line
+        return tsv
+
+    def save_to_tsv(self, path):
+        tsv = self.to_tsv()
+        handle = open(path, "w")
+        with handle:
+            handle.write(tsv)
+
+
+class DocumentCollection(ThingCollection):
+    """
+    Ordered collection of unique VFC documents.
+    """
+    type_of_thing = Document
+
+    def __init__(self, iterator=None, tsv=None):
+        self.programs = set()
+        self.types = set()
+        self.ids = set()
+        self.iddic = {}
+        self.namedic = {}
+        self.latest_file_date = None
+        self.latest_crawl_date = None
+        super(DocumentCollection, self).__init__(iterator, tsv=tsv)
+
+    def recalculate(self):
+        super(DocumentCollection, self).recalculate()
+        self.programs = set()
+        self.types = set()
+        self.ids = set()
+        self.namedic = {}
+        for item in self:
+            self.do_addition(item)
+
+    def update_dates(self, document):
+        if not self.latest_file_date:
+            self.latest_file_date = document.file_date
+        elif document.file_date > self.latest_file_date:
+            self.latest_file_date = document.file_date
+        if not self.latest_crawl_date:
+            self.latest_crawl_date = document.crawl_date
+        elif document.crawl_date > self.latest_crawl_date:
+            self.latest_crawl_date = document.crawl_date
+
+    def do_addition(self, document):
+        self.programs.add(document.program)
+        self.types.add(document.type)
+        self.ids.add(document.id)
+        self.items.add(document)
+        self.namedic[document.filename] = document
+        self.update_dates(document)
+
+    @property
+    def latest_date(self):
+        dates = [self.latest_crawl_date, self.latest_file_date]
+        if all(dates):
+            return max(dates)
+        elif any(dates):
+            if dates[0]:
+                return dates[0]
+            else:
+                return dates[1]
+        else:
+            return None
+
+
+class FacilityCollection(ThingCollection):
+    type_of_thing = Facility
+
+    def __init__(self, iterator=None, tsv=None):
+        super(FacilityCollection, self).__init__(iterator, tsv=tsv)
+        self.iddic = {}
+        self.ids = set()
+        self.namedic = collections.defaultdict(list)
+        if tsv is not None:
+            self.from_tsv(tsv)
+        self.recalculate()
+
+    def recalculate(self):
+        super(FacilityCollection, self).recalculate()
+        self.iddic = {}
+        self.ids = set()
+        self.namedic = collections.defaultdict(list)
+        for facility in self.items:
+            self.do_addition(facility)
+
+    def do_addition(self, facility):
+        self.iddic[facility.vfc_id] = facility
+        self.namedic[facility.vfc_name].append(facility)
+        self.ids.add(facility.vfc_id)
+
+    def save_docs(self):
+        paths = []
+        for facility in self:
+            filename = facility.vfc_id + ".tsv"
+            docs_path = os.path.join(facility.directory, filename)
+            docs_tsv = facility.docs.to_tsv()
+            handle = open(docs_path, "w")
+            with handle:
+                handle.write(docs_tsv)
+            paths.append(docs_path)
+        return paths
+
+    def save_to_tsv(self, path=None, savedocs=True):
+        if path is None:
+            filename = "facilities_%s.tsv" % datetime.date.today().isoformat()
+            path = os.path.join(maindir, filename)
+        super(FacilityCollection, self).save_to_tsv(path)
+        if savedocs is True:
+            self.save_docs()
+
 
 class ZipCollection(list):
     html = ""
@@ -1032,9 +1083,9 @@ class ZipCollection(list):
     def __init__(self, zips=lakezips, offline=False, **kwargs):
         super(ZipCollection, self).__init__()
         self.date = datetime.date.today()
-        self.facilities = set()
-        self.iddic = {}
-        self.namedic = collections.defaultdict(list)
+        self.facilities = FacilityCollection()
+        self.iddic = self.facilities.iddic
+        self.namedic = self.facilities.namedic
         self.zips = zips
         self.offline = offline
         for zipcode in zips:
@@ -1053,9 +1104,9 @@ class ZipCollection(list):
         self.append(updater)
 
     def add_facility(self, facility):
-        self.facilities.add(facility)
-        self.iddic[facility.vfc_id] = facility
-        self.namedic[facility.vfc_name].append(facility)
+        self.facilities.append(facility)
+        #        self.iddic[facility.vfc_id] = facility
+        #        self.namedic[facility.vfc_name].append(facility)
 
     def go(self, restart=False):
         if restart:
@@ -1949,7 +2000,6 @@ def do_cron():
     save_active_sites_as_json(collection, lookback=7)
     tea_core.do_cron()
     return collection
-
 
 
 if __name__ == "__main__":

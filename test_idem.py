@@ -15,13 +15,8 @@ class DocumentTestCase(unittest.TestCase):
         pass
 
     def test_same_filenames_are_equal(self):
-        doc1 = idem.Document(filename="foo")
-        doc2 = idem.Document(filename="bar")
-        self.assertNotEqual(doc1, doc2)
-
-    def test_empty_filenames_are_unequal(self):
-        doc1 = idem.Document(filename="", id=self.docid)
-        doc2 = idem.Document(filename="", id="10201")
+        doc1 = idem.Document(type="foo")
+        doc2 = idem.Document(type="bar")
         self.assertNotEqual(doc1, doc2)
 
     def test_earlier_file_date_is_less_than_later(self):
