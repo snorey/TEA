@@ -519,11 +519,11 @@ def get_poly_for_zip(zipcode, zippath=None, for_leaflet=True):
     if zippath is None:
         zippath = idem_settings.zippath
     r = shapefile.Reader(zippath)
-    records = [x for x in r.shapeRecords() if x.record[0]==zipcode]
+    records = [x for x in r.shapeRecords() if x.record[0] == zipcode]
     print zipcode, len(records)
     if len(records) == 1:
         points = records[0].shape.points
-        latlongs = convert_list_to_latlong(points, reverse=True)
+        latlongs = convert_list_to_latlong(points, reverse=for_leaflet)
         poly = Polygon(latlongs)
     else:
         points = []
@@ -531,7 +531,7 @@ def get_poly_for_zip(zipcode, zippath=None, for_leaflet=True):
             points.extend(rec.shape.points)
         if not points or len(points) < 3:
             return
-        latlongs = convert_list_to_latlong(points, reverse=True)
+        latlongs = convert_list_to_latlong(points, reverse=for_leaflet)
         poly = MultiPoint(latlongs).envelope
     return poly
 
@@ -686,6 +686,7 @@ def get_daily_filepath(suffix, date=None, directory=idem_settings.maindir, docty
 
 def do_cron():
     update_all_local_directories()
+
 
 if __name__ == "__main__":
     do_cron()
