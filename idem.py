@@ -36,9 +36,10 @@ latest_json_path = os.path.join(idem_settings.websitedir, "latest_vfc.json")
 
 
 class Thing(object):
-"""
-Basic meta-class for documents/facilities/etc; not to be invoked directly.
-"""
+    """
+    Basic meta-class for documents/facilities/etc; not to be invoked directly.
+    """
+
     attribute_sequence = ("property1", "property2", "property3")
 
     def __init__(self, tsv=None, *args):
@@ -155,6 +156,13 @@ class Document(Thing):
                 print "Download complete"
                 time.sleep(tea_core.DEFAULT_WAIT)
         return True
+
+    def from_tsv(self, tsv_line=""):
+        super(Document, self).from_tsv(tsv_line)
+        for date_field in ["crawl_date", "file_date"]:
+            date_string = getattr(self, date_field)
+            date_object = date_from_iso(date_string)
+            setattr(self, date_field, date_object)
 
 
 class Facility(Thing):  # data structure
@@ -1255,6 +1263,7 @@ class ZipCycler:
 
     def cycle(self, do_all=False):
         for current_zip in self.zips:  # avoid holding multiple updaters in memory
+            print current_zip
             updater = ZipUpdater(current_zip)
             for facility in updater.facilities:
                 if do_all or facility.whether_to_update:
@@ -1263,7 +1272,8 @@ class ZipCycler:
 
     def update_facility(self, facility):
         new_files = facility.check_for_new_docs()
-        print facility.vfc_name, len(new_files)
+        file_count = len(new_files)
+        print "*" * file_count, facility.vfc_name, file_count
         if new_files:
             self.new.append(new_files)
             self.updated.append(facility)
@@ -1749,16 +1759,16 @@ def facility_to_html(facility, reference_date=None, add_icons=False):
                    "Biosolids": ("/sewage.png", "Biosolids"),
                    "SRF": ("/money.png", "State revolving fund"),
                    "State Cleanup": ("/backhoe.png", "State Cleanup"),
-                   "Storm Water Industrial": ("/sewage.png", "Storm Water Industrial"),
+                   "Storm Water Industrial": ("/sewage.png", "Stormwater"),
                    "VRP": ("/backhoe.png", "Voluntary remediation program"),
                    "DW Field Inspections": ("/drinking_water.png", "Drinking water"),
                    "Brownfields": ("/backhoe.png", "Brownfields"),
                    "Site Investigation": ("/investigation.png", "Site investigation"),
                    "Superfund": ("/skull.png", "Superfund"),
                    "OAQ Asbestos": ("/gasmask.png", "OAQ Asbestos"),
-                   "Storm Water Construction": ("/sewage.png", "Storm Water Construction"),
+                   "Storm Water Construction": ("/sewage.png", "Stormwater"),
                    "DW Compliance": ("/drinking_water.png", "Drinking water"),
-                   "Emergency Response": ("/skull.png", "Emergency Response"),
+                   "Emergency Response": ("/skull.png", "Emergency response"),
                    "OAQ Air Monitoring": ("/smokestack.png", "Air monitoring"),
                    "SW Facility": ("/dumptruck.png", "Solid waste facility"),
                    }
