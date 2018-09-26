@@ -3,6 +3,7 @@ import geojson  # pip install geojson
 import idem_settings
 import os
 import re
+import requests
 import shapefile  # pip install pyshp
 from shapely.geometry import mapping, Polygon, Point, MultiPoint  # pip install shapely
 import time
@@ -133,6 +134,7 @@ class Document(object):
     facility = ""
     path = ""
     content = ""
+    _session = None
 
     def __init__(self, **arguments):
         assign_values(self, arguments, tolerant=True)
@@ -154,6 +156,12 @@ class Document(object):
             return self.file_date
         else:
             return self.crawl_date
+
+    @property
+    def session(self):
+        if self._session is None:
+            self._session = requests.Session()
+        return self._session
 
     def retrieve_patiently(self, path="", url=None):
         if not path:
@@ -233,7 +241,7 @@ def do_patiently(action, *args, **kwargs):
             result = action(*args, **kwargs)
         except Exception, e:
             print str(e)
-            time.sleep(DEFAULT_WAIT_AFTER_ERROR)
+            time.sleep(DEFAULT_WAIT_AFTER_ERROR * inc)
         else:
             done = True
             time.sleep(DEFAULT_WAIT)
