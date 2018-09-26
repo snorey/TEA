@@ -35,43 +35,7 @@ latlong_filepath = os.path.join(idem_settings.maindir, "facilitydump.txt")
 latest_json_path = os.path.join(idem_settings.websitedir, "latest_vfc.json")
 
 
-class Thing(object):
-    """
-    Basic meta-class for documents/facilities/etc; not to be invoked directly.
-    """
-
-    attribute_sequence = ("property1", "property2", "property3")
-
-    def __init__(self, tsv=None, *args):
-        super(Thing, self).__init__()
-        if tsv is not None:
-            self.from_tsv(tsv)
-
-    def from_tsv(self, tsv_line=""):
-        pieces = tsv_line.split("\t")
-        length = min(len(self.attribute_sequence), len(pieces))
-        for index in range(0, length):
-            attribute = self.attribute_sequence[index]
-            value = pieces[index]
-            setattr(self, attribute, value)
-
-    def to_tsv(self):
-        tsv = ""
-        for attribute in self.attribute_sequence:
-            if hasattr(self, attribute):
-                value = getattr(self, attribute)
-                if not value:
-                    value = ""
-                else:
-                    value = str(value)
-            else:
-                value = ""
-            tsv += value + "\t"
-        tsv += "\n"
-        return tsv
-
-
-class Document(Thing):
+class Document(tea_core.Thing):
     id = ""
     url = ""
     crawl_date = None
@@ -164,7 +128,7 @@ class Document(Thing):
             setattr(self, int_field, value_int)
 
 
-class Facility(Thing):  # data structure
+class Facility(tea_core.Thing):  # data structure
     row = ""
     vfc_name = ""
     vfc_address = ""
@@ -173,6 +137,7 @@ class Facility(Thing):  # data structure
     county = ""
     state = ""
     zip = ""
+    real_name = ""  # placeholder for potential manual alterationsim
     latlong_address = ""
     vfc_id = ""
     directory = ""
@@ -209,7 +174,6 @@ class Facility(Thing):  # data structure
         self.downloaded_filenames = self.get_downloaded_docs()
         if self.directory:
             self.since_last_check = since_last_scan(self.directory)
-            self.get_latest_page()
         else:
             self.since_last_check = 0
         if retrieve:
@@ -927,110 +891,7 @@ class ZipUpdater:
             self.facilities.save_docs()
 
 
-class ThingCollection(list):
-    type_of_thing = Thing
-
-    def __init__(self, iterator=None, tsv=None):
-        if iterator is None:
-            iterator = []
-        self.items = set()
-        self.attribute_sequence = self.type_of_thing.attribute_sequence
-        super(ThingCollection, self).__init__(iterator)
-        if tsv is not None:
-            self.from_tsv(tsv)
-        self.recalculate()
-
-    def __delitem__(self, key):
-        super(ThingCollection, self).__delitem__(key)
-        self.recalculate()
-
-    def remove_extra_item(self, item):
-        if self.count(item) > 1:
-            i = 0
-            count = 0
-            while i < len(self):
-                this_item = self[i]
-                if this_item == item:
-                    count += 1
-                    if count > 1:
-                        del self[i]
-                        continue  # do not increment, so as not to skip decremented next item
-                    else:
-                        i += 1
-                else:
-                    i += 1
-
-    def remove_extras(self):
-        items = set(self)
-        for item in items:
-            self.remove_extra_item(item)
-
-    def validate_item(self, obj):
-        if not isinstance(obj, self.type_of_thing):
-            raise TypeError
-        elif obj in self.items:
-            return False
-        else:
-            return True
-
-    def recalculate(self):
-        self.items = set(self)
-        for item in self.items:
-            self.validate_item(item)
-            self.remove_extra_item(item)
-
-    def do_addition(self, item):
-        pass  # placeholder to override in subclasses
-
-    def append(self, obj):
-        result = self.validate_item(obj)
-        if result is True:
-            super(ThingCollection, self).append(obj)
-            self.do_addition(obj)
-
-    def extend(self, iterable):
-        iterable = [x for x in iterable if self.validate_item(x)]
-        super(ThingCollection, self).extend(iterable)
-        for i in iterable:
-            self.do_addition(i)
-
-    def process_tsv_line(self, line):
-        if not line.strip():
-            return
-        new_thing = self.type_of_thing(tsv=line)
-        self.append(new_thing)
-
-    def from_tsv(self, tsv=None, path=None):
-        if tsv is None and path is None:
-            return
-        elif path:
-            tsv = open(path).read()
-        lines = tsv.split("\n")
-        if len(lines) < 2:
-            return
-        for line in lines[1:]:
-            self.process_tsv_line(line)
-
-    def to_tsv(self):
-        self.sort()
-        sequence = self.attribute_sequence
-        firstline = "\t".join(sequence)
-        tsv = firstline + "\n"
-        for thing in self:
-            new_tsv_line = thing.to_tsv()
-            tsv += new_tsv_line
-        return tsv
-
-    def save_tsv(self, path, callback=None):
-        tsv = self.to_tsv()
-        handle = open(path, "w")
-        with handle:
-            handle.write(tsv)
-        if callback is not None:
-            callback()
-
-
-class DocumentCollection(ThingCollection):
+class DocumentCollection(tea_core.ThingCollection):
     """
     Ordered collection of unique VFC documents.
     """
@@ -1087,7 +948,7 @@ class DocumentCollection(ThingCollection):
             return None
 
 
-class FacilityCollection(ThingCollection):
+class FacilityCollection(tea_core.ThingCollection):
     type_of_thing = Facility
 
     def __init__(self, iterator=None, tsv=None):
@@ -1816,7 +1677,7 @@ def facility_to_html(facility, reference_date=None, add_icons=False):
                    "Emergency Response": ("/skull.png", "Emergency response"),
                    "OAQ Air Monitoring": ("/smokestack.png", "Air monitoring"),
                    "SW Facility": ("/dumptruck.png", "Solid waste facility"),
-                   "DERP" : {"/missile.png", "Defense remediation"},
+                   "DERP": {"/missile.png", "Defense remediation"},
                    }
         iconline = '<p class="icon-line">%s</p>'
         icons = ""
