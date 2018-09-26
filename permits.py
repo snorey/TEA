@@ -4,6 +4,7 @@ import collections
 import datetime
 import geojson
 import idem_settings
+import operator
 import os
 import tea_core
 import urllib
@@ -146,7 +147,6 @@ class Permit(tea_core.Document):
         return tsv
 
     def from_tsv(self, line):
-        print line
         name, url, pm, number, county, dates, vfc, address, latlong = line.split("\t")
         self.facility.name = name
         self.url = url
@@ -360,24 +360,27 @@ class PermitUpdater:
         name = today + "_permits_" + extension
         return name
 
+    def is_relevant(self, permit):
+        if permit.county.upper() == self.county.upper():
+            return True
+        elif permit.county.upper().startswith("MULTI"):
+            return True
+        else:
+            return False
+
+    def process_permit_to_tsv(self, permit):
+        newline = ""
+        if self.is_relevant(permit):
+            newline = permit.to_tsv()
+            newline += "\n"
+        return newline
+
     def to_tsv(self, filepath=None):
-        def is_relevant(permit):
-            if permit.county.upper() == self.county.upper():
-                return True
-            elif permit.county.upper().startswith("MULTI"):
-                return True
-            else:
-                return False
         tsv = tsv_first_line + "\n"
         for permit in self.current:
-            if is_relevant(permit):
-                newline = permit.to_tsv()
-                tsv += newline + "\n"
-        if filepath is None:
-            return tsv
-        else:
-            open(filepath, "w").write(tsv)
-            return filepath
+            self.process_permit_to_tsv(permit)
+        result = tea_core.save_or_return_text(tsv, filepath)
+        return result
 
     def from_tsv(self, filepath=None):
         if filepath is None:
@@ -420,7 +423,7 @@ class PermitUpdater:
 
     def latlongify(self):
         """
-        Generate latlong for all permits
+        Generate latlong for all permits.
         :return: None
         """
         for permit in self.current:
@@ -429,18 +432,15 @@ class PermitUpdater:
             elif permit.facility.full_address:
                 permit.facility.latlongify()
 
-    def to_json(self, county="Lake"):
-        """
-        :param county: str
-        :return: geojson object
-        """
-        documents = self.current
-        json = active_permits_to_geojson(documents, county)
+    def to_json(self):
+        documents = [x for x in self.current if self.is_relevant(x)]
+        json = active_permits_to_geojson(documents)
         return json
 
     def save_as_json(self):
         """
-        :return: str
+        Saves JSON representation of permits to the standard filepath.
+        :return: Path to newly-saved JSON file
         """
         jsonpath = get_json_filepath(self.date)
         write_usable_json(self, jsonpath)
@@ -502,25 +502,30 @@ def doc_to_geojson(permit,
 
 def filter_active_permits(documents, county="Lake"):
     # sort by start_date and filter out closed permits
-    documents_ = set(documents)
-    sortable = [(x.start_date, x) for x in documents_ if x.is_comment_open()]
-    sortable.sort()
-    documents_filtered = [x[1] for x in sortable]
+    unique_documents = set(documents)
+    sortable = [x for x in unique_documents if x.is_comment_open()]
+    sortable.sort(key=operator.attrgetter("start_date"))
+    documents_filtered = sorted(sortable)
     if county is not None:
         documents_filtered = [x for x in documents_filtered if x.county.upper() == county.upper()]
     return documents_filtered
 
 
-def active_permits_to_geojson(documents, county=None):
-    # filter out inactive and inapplicable documents
-    documents = filter_active_permits(documents, county=county)
-    # convert to feature list
+def permits_to_geojson(documents):
     features = []
     for doc in documents:
         new_feature = doc_to_geojson(doc)
         if new_feature is not None:
             features.append(new_feature)
     collection = geojson.FeatureCollection(features)
+    return collection
+
+
+def active_permits_to_geojson(documents, county=None):
+    # filter out inactive and inapplicable documents
+    documents = filter_active_permits(documents, county=county)
+    # convert to feature list
+    collection = permits_to_geojson(documents)
     return collection
 
 
@@ -630,6 +635,7 @@ def do_cron():  # may need to split this into a morning and evening cron
     jsonpath = get_json_filepath()
     write_usable_json(updater, jsonpath)
     write_usable_json(updater, latest_json_path)
+    return updater
 
 
 if __name__ == "__main__":
