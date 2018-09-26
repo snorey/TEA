@@ -72,18 +72,20 @@ class Thing(object):
 
 
 class Document(Thing):
+    id = ""
     url = ""
     crawl_date = None
     file_date = None
-    id = ""
     type = ""
     program = ""
     facility = None
+    facility_id = None
     path = ""
     row = ()
     size = 0
     session = None
-    attribute_sequence = ("id", "url", "crawl_date", "file_date", "type", "program", "filename", "size", "local_path",
+    _filename = ""
+    attribute_sequence = ("id", "url", "crawl_date", "file_date", "type", "program", "_filename", "size", "path",
                           "facility_id")
 
     def __init__(self, row=None, build=False, tsv=None, **kwargs):
@@ -91,6 +93,8 @@ class Document(Thing):
         if row is not None and build is not False:
             self.row = row
             self.from_oldstyle_row(row)
+        if self.facility and not self.facility_id:
+            self.facility_id = self.facility.vfc_id
         tea_core.assign_values(self, kwargs)
 
     def __eq__(self, other):
@@ -111,6 +115,8 @@ class Document(Thing):
 
     @property
     def filename(self):
+        if self._filename:
+            return self._filename
         if self.file_date:
             date = self.file_date.isoformat()
         else:
@@ -135,27 +141,13 @@ class Document(Thing):
         domain = idem_settings.ecm_domain
         self.url = domain + relative_url
 
-    def retrieve_file_patiently(self, maxtries=10):
-        done = False
-        inc = 0
-        while not done:
-            inc += 1
-            if inc > maxtries:
-                print "Aborting!"
-                return False
-            try:
-                response = self.session.get(self.url, stream=True)
-                with open(self.path, 'wb') as out_file:
-                    shutil.copyfileobj(response.raw, out_file)
-            except Exception, e:
-                print str(e)
-                time.sleep(tea_core.DEFAULT_WAIT_AFTER_ERROR)
-            else:
-                del response
-                done = True
-                print "Download complete"
-                time.sleep(tea_core.DEFAULT_WAIT)
-        return True
+    def retrieve_binary_file(self):
+        response = self.session.get(self.url, stream=True)
+        with open(self.path, 'wb') as out_file:
+            shutil.copyfileobj(response.raw, out_file)
+
+    def retrieve_file_patiently(self):
+        tea_core.do_patiently(self.retrieve_binary_file)
 
     def from_tsv(self, tsv_line=""):
         super(Document, self).from_tsv(tsv_line)
@@ -163,6 +155,13 @@ class Document(Thing):
             date_string = getattr(self, date_field)
             date_object = date_from_iso(date_string)
             setattr(self, date_field, date_object)
+        for int_field in ["size"]:
+            value_string = getattr(self, int_field)
+            if not value_string:
+                value_int = 0
+            else:
+                value_int = int(value_string)
+            setattr(self, int_field, value_int)
 
 
 class Facility(Thing):  # data structure
@@ -177,7 +176,6 @@ class Facility(Thing):  # data structure
     full_address = ""
     latlong_address = ""
     vfc_id = ""
-    vfc_url = ""
     directory = ""
     page = ""
     parent = None
@@ -189,7 +187,6 @@ class Facility(Thing):  # data structure
 
     def __init__(self, row=None, parent=None, directory=None, date=None, vfc_id=None, retrieve=False, tsv=None,
                  **arguments):
-        super(Facility, self).__init__(tsv=tsv)
         self.updated_docs = set()
         self.downloaded_filenames = set()
         self.session = requests.Session()
@@ -207,6 +204,7 @@ class Facility(Thing):  # data structure
         else:
             self.date = datetime.date.today()
         self.set_directory(directory=directory)
+        super(Facility, self).__init__(tsv=tsv)
         if arguments:
             tea_core.assign_values(self, arguments, tolerant=True, cautious=True)
         self.downloaded_filenames = self.get_downloaded_docs()
@@ -219,7 +217,8 @@ class Facility(Thing):  # data structure
             self.retrieve_page_if_missing()
         if not self.downloaded_filenames:
             self.downloaded_filenames = self.get_downloaded_docs()
-        self.docs_from_directory()
+        if not tsv:
+            self.docs_from_directory()
 
     def __eq__(self, other):
         return hash(self) == hash(other)
@@ -264,6 +263,39 @@ class Facility(Thing):  # data structure
         programs = self.docs.programs
         programs = sorted(list(programs))
         return programs
+
+    @property
+    def vfc_url(self):
+        url = "http://vfc.idem.in.gov/DocumentSearch.aspx?xAIID="
+        url = url + self.vfc_id
+        return url
+
+    @property
+    def latest_file_date(self):
+        """
+        Return date object for the most recent file date of any file associated with the facility.
+        :return: datetime.date
+        """
+        if not self.docs:
+            return None
+        else:
+            latest_doc = self.docs[-1]
+            latest_file_date = latest_doc.file_date
+            return latest_file_date
+
+    @property
+    def latest_crawl_date(self):
+        """
+        Return date object for the most recent CRAWL date for any file associated with the facility.
+        :return: datetime.date
+        """
+        if not self.docs:
+            return None
+        else:
+            crawls = [x.crawl_date for x in self.docs]
+            crawls.sort()
+            latest_crawl_date = crawls[-1]
+            return latest_crawl_date
 
     def is_active_since(self, cutoff_date):
         if not self.docs:
@@ -420,33 +452,6 @@ class Facility(Thing):  # data structure
         self.page = open(path_to_newest).read()
         return self.page
 
-    @property
-    def latest_file_date(self):
-        """
-        Return date object for the most recent file date of any file associated with the facility.
-        :return: datetime.date
-        """
-        if not self.docs:
-            return None
-        else:
-            latest_doc = self.docs[-1]
-            latest_file_date = latest_doc.file_date
-            return latest_file_date
-
-    @property
-    def latest_crawl_date(self):
-        """
-        Return date object for the most recent CRAWL date for any file associated with the facility.
-        :return: datetime.date
-        """
-        if not self.docs:
-            return None
-        else:
-            crawls = [x.crawl_date for x in self.docs]
-            crawls.sort()
-            latest_crawl_date = crawls[-1]
-            return latest_crawl_date
-
     def check_for_new_docs(self, page=None):
         if not page:
             page = self.retrieve_page()
@@ -548,18 +553,42 @@ class Facility(Thing):  # data structure
             should_update = False
         return should_update
 
-    def from_tsv(self, tsv_line=""):
+    @property
+    def docs_path(self):
+        filename = self.vfc_id + ".tsv"
+        docs_path = os.path.join(self.directory, filename)
+        return docs_path
+
+    def load_docs_from_tsv(self):
+        path = self.docs_path
+        self.docs.from_tsv(path=path)
+
+    def from_tsv(self, tsv_line="", load_docs=True):
         super(Facility, self).from_tsv(tsv_line)
         if self.latlong:
             self.latlong = destring_latlong_pair(self.latlong)
+        if load_docs:
+            self.load_docs_from_tsv()
+
+    def save_docs_to_tsv(self, path=None):
+        if path is None:
+            path = self.docs_path
+        docs_tsv = self.docs.to_tsv()
+        handle = open(path, "w")
+        with handle:
+            handle.write(docs_tsv)
 
 
 class ZipUpdater:
 
-    def __init__(self, zipcode, create=True, **arguments):
+    def __init__(self, zipcode, create=True, load_facilities=True, load_tsv=False, **arguments):
         self.zip = zipcode
         self.html = ""
         self.count = 0
+        self.session = requests.Session()
+        self.current_facility = None
+        self.updated_facilities = []
+        self.logtext = ""
         self.whether_download = True
         self.whether_update_zip_info = True
         self.whether_update_facility_info = True
@@ -575,12 +604,10 @@ class ZipUpdater:
         tea_core.assign_values(self, arguments, tolerant=True)
         self.page = get_latest_zip_page(self.zip, zipdir=self.directory)
         self.facilities = FacilityCollection()
-        self.get_facilities_from_page(self.page)
-        self.sites_by_siteid = self.facilities.iddic
-        self.session = requests.Session()
-        self.current_facility = None
-        self.updated_facilities = []
-        self.logtext = ""
+        if load_tsv:
+            self.load_tsv()
+        elif load_facilities:
+            self.get_facilities_from_page(self.page)
 
     def go_offline(self):
         self.whether_download = False
@@ -651,7 +678,7 @@ class ZipUpdater:
                 time.sleep(tea_core.DEFAULT_WAIT)
 
     def handle_facility(self, site_id):
-        facility = self.sites_by_siteid[site_id]
+        facility = self.facilities.iddic[site_id]
         self.current_facility = facility
         if self.whether_update_facility(facility):
             self.update_facility(facility)
@@ -804,10 +831,10 @@ class ZipUpdater:
     def scan_zip_for_premature(self):
         sitedirs = filter(lambda x: os.path.isdir(os.path.join(self.directory, x)), os.listdir(self.directory))
         for siteid in sitedirs:
-            if siteid not in self.sites_by_siteid.keys():
+            if siteid not in self.facilities.iddic.keys():
                 print "%s not in keys!" % siteid
                 continue
-            self.current_facility = self.sites_by_siteid[siteid]
+            self.current_facility = self.facilities.iddic[siteid]
             sitedir = os.path.join(self.directory, siteid)
             if scan_for_premature_stops(sitedir):
                 self.get_downloaded_docs()
@@ -858,26 +885,34 @@ class ZipUpdater:
                 facility.latlongify()
             time.sleep(tea_core.DEFAULT_SHORT_WAIT)
 
-    def get_tsv_path(self):
+    @property
+    def tsv_path(self):
         filename = self.zip + ".tsv"
         directory = self.directory
         path = os.path.join(directory, filename)
         return path
 
-    def load_tsv(self, path=None):
+    def load_tsv(self, path=None, load_docs=True):
         if path is None:
-            path = self.get_tsv_path()
+            path = self.tsv_path
         tsv = open(path).read()
         facilities = FacilityCollection(tsv=tsv)
+        for f in facilities:
+            f.parent = self
         self.facilities.extend(facilities)
+        if load_docs:
+            for f in facilities:
+                f.load_docs_from_tsv()
 
-    def save_tsv(self, path=None):
+    def save_tsv(self, path=None, savedocs=True):
         if path is None:
-            path = self.get_tsv_path()
+            path = self.tsv_path
         tsv = self.facilities.to_tsv()
         handle = open(path, "w")
         with handle:
             handle.write(tsv)
+        if savedocs:
+            self.facilities.save_docs()
 
 
 class ThingCollection(list):
@@ -974,11 +1009,13 @@ class ThingCollection(list):
             tsv += new_tsv_line
         return tsv
 
-    def save_to_tsv(self, path):
+    def save_tsv(self, path, callback=None):
         tsv = self.to_tsv()
         handle = open(path, "w")
         with handle:
             handle.write(tsv)
+        if callback is not None:
+            callback()
 
 
 class DocumentCollection(ThingCollection):
@@ -1042,10 +1079,10 @@ class FacilityCollection(ThingCollection):
     type_of_thing = Facility
 
     def __init__(self, iterator=None, tsv=None):
-        super(FacilityCollection, self).__init__(iterator, tsv=tsv)
         self.iddic = {}
         self.ids = set()
         self.namedic = collections.defaultdict(list)
+        super(FacilityCollection, self).__init__(iterator, tsv=tsv)
         if tsv is not None:
             self.from_tsv(tsv)
         self.recalculate()
@@ -1064,22 +1101,16 @@ class FacilityCollection(ThingCollection):
         self.ids.add(facility.vfc_id)
 
     def save_docs(self):
-        paths = []
         for facility in self:
-            filename = facility.vfc_id + ".tsv"
-            docs_path = os.path.join(facility.directory, filename)
-            docs_tsv = facility.docs.to_tsv()
-            handle = open(docs_path, "w")
-            with handle:
-                handle.write(docs_tsv)
-            paths.append(docs_path)
-        return paths
+            facility.save_docs_to_tsv()
 
-    def save_to_tsv(self, path=None, savedocs=True):
+    def save_tsv(self, path=None, savedocs=True, directory=None):
         if path is None:
             filename = "facilities_%s.tsv" % datetime.date.today().isoformat()
-            path = os.path.join(maindir, filename)
-        super(FacilityCollection, self).save_to_tsv(path)
+            if directory is None:
+                directory = maindir
+            path = os.path.join(directory, filename)
+        super(FacilityCollection, self).save_tsv(path)
         if savedocs is True:
             self.save_docs()
 
@@ -1089,8 +1120,9 @@ class ZipCollection(list):
     update_all = False
     worry_about_crawl_date = True
     restart = False
+    directory = maindir
 
-    def __init__(self, zips=lakezips, offline=False, **kwargs):
+    def __init__(self, zips=lakezips, offline=False, load_tsv=False, **kwargs):
         super(ZipCollection, self).__init__()
         self.date = datetime.date.today()
         self.facilities = FacilityCollection()
@@ -1100,6 +1132,7 @@ class ZipCollection(list):
         self.offline = offline
         for zipcode in zips:
             print zipcode
+            kwargs["load_tsv"] = load_tsv
             self.setup_updater(zipcode, kwargs)
 
     def setup_updater(self, zipcode, kwargs):
@@ -1115,8 +1148,6 @@ class ZipCollection(list):
 
     def add_facility(self, facility):
         self.facilities.append(facility)
-        #        self.iddic[facility.vfc_id] = facility
-        #        self.namedic[facility.vfc_name].append(facility)
 
     def go(self, restart=False):
         if restart:
@@ -1250,7 +1281,7 @@ class ZipCollection(list):
             print facility.vfc_name, facility.directory, facility.full_address
             facility.download()
             time.sleep(tea_core.DEFAULT_SHORT_WAIT)
-
+            
 
 class ZipCycler:
 
@@ -1260,14 +1291,16 @@ class ZipCycler:
         self.updated = []
         self.iddic = {}
         self.ids = set()
+        self.use_tsv = True
 
     def cycle(self, do_all=False):
         for current_zip in self.zips:  # avoid holding multiple updaters in memory
             print current_zip
-            updater = ZipUpdater(current_zip)
+            updater = ZipUpdater(current_zip, load_tsv=self.use_tsv)
             for facility in updater.facilities:
                 if do_all or facility.whether_to_update:
                     self.update_facility(facility)
+            updater.save_tsv(savedocs=True)
         return self.new
 
     def update_facility(self, facility):
