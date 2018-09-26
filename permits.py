@@ -33,11 +33,10 @@ class Permit(tea_core.Document):
     start_date = None
     directory = permitdir
 
-    def __init__(self, **arguments):
+    def __init__(self, tsv="", **arguments):
         super(Permit, self).__init__(**arguments)
         self.facility = Facility()
-        if "tsv" in arguments.keys():
-            tsv = arguments["tsv"]
+        if tsv:
             self.from_tsv(tsv)
             self.convert_dates()
         if "row" in arguments.keys():
@@ -209,7 +208,7 @@ def infer_program_from_url(url):
         return "Wastewater"
     if "air" in url:
         return "Air"
-    if "dw" in url:
+    if "dw" in url or "pws" in url:
         return "Drinking water"
     else:
         return ""
@@ -362,10 +361,18 @@ class PermitUpdater:
         return name
 
     def to_tsv(self, filepath=None):
+        def is_relevant(permit):
+            if permit.county.upper() == self.county.upper():
+                return True
+            elif permit.county.upper().startswith("MULTI"):
+                return True
+            else:
+                return False
         tsv = tsv_first_line + "\n"
         for permit in self.current:
-            newline = permit.to_tsv()
-            tsv += newline + "\n"
+            if is_relevant(permit):
+                newline = permit.to_tsv()
+                tsv += newline + "\n"
         if filepath is None:
             return tsv
         else:
