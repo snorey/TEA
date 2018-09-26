@@ -129,25 +129,26 @@ class Document(tea_core.Thing):
 
 
 class Facility(tea_core.Thing):  # data structure
-    row = ""
-    vfc_name = ""
-    vfc_address = ""
-    latlong = False
+    attribute_sequence = ("vfc_id", "vfc_name", "real_name", "vfc_address", "city", "county", "state", "zip", "latlong",
+                          "latlong_address", "directory", "last_check")
     city = ""
     county = ""
-    state = ""
-    zip = ""
-    real_name = ""  # placeholder for potential manual alterationsim
-    latlong_address = ""
-    vfc_id = ""
     directory = ""
+    filenamedic = None
+    last_check = None
+    latlong = False
+    latlong_address = ""
     page = ""
     parent = None
+    real_name = ""  # placeholder for potential manual alterationsim
     resultcount = 20
-    worry_about_crawl_date = True
-    filenamedic = None
-    attribute_sequence = ("vfc_id", "vfc_name", "real_name", "vfc_address", "city", "county", "state", "zip", "latlong",
-                          "latlong_address", "directory")
+    row = ""
+    state = ""
+    vfc_address = ""
+    vfc_id = ""
+    vfc_name = ""
+    worry_about_crawl_date = True  # useful for download-only sessions
+    zip = ""
 
     def __init__(self, row=None, parent=None, directory=None, date=None, vfc_id=None, retrieve=False, tsv=None,
                  **arguments):
@@ -172,10 +173,6 @@ class Facility(tea_core.Thing):  # data structure
         if arguments:
             tea_core.assign_values(self, arguments, tolerant=True, cautious=True)
         self.downloaded_filenames = self.get_downloaded_docs()
-        if self.directory:
-            self.since_last_check = since_last_scan(self.directory)
-        else:
-            self.since_last_check = 0
         if retrieve:
             self.retrieve_page_if_missing()
         if not self.downloaded_filenames:
@@ -183,10 +180,6 @@ class Facility(tea_core.Thing):  # data structure
         if not tsv:
             self.docs_from_directory()
             self.get_latest_page()
-        if self.directory:
-            self.since_last_check = since_last_scan(self.directory)
-        else:
-            self.since_last_check = 0
         if retrieve:
             self.retrieve_page_if_missing()
         if not self.downloaded_filenames:
@@ -200,6 +193,14 @@ class Facility(tea_core.Thing):  # data structure
 
     def __hash__(self):
         return hash(self.identity)
+
+    @property
+    def since_last_scan(self):
+        if self.last_check:
+            days_since_scan = (datetime.date.today() - self.last_check).days
+        else:
+            days_since_scan = since_last_scan(self.directory)
+        return days_since_scan
 
     @property
     def identity(self):
@@ -438,7 +439,7 @@ class Facility(tea_core.Thing):  # data structure
         return new_docs
 
     def get_updated_docs_in_directory(self, fromdate=None, todate=None):
-        docdic = dict([(x.filename, x) for x in self.docs])
+        docdic = self.docs.namedic
         if not fromdate:
             fromdate = self.parent.date
         if not todate:
@@ -466,17 +467,18 @@ class Facility(tea_core.Thing):  # data structure
             updated.add(doc)
         return updated
 
-    def retrieve_page(self, firsttime=True, delay=1):
+    def retrieve_page(self, firsttime=True):
         if firsttime is False and len(self.downloaded_filenames) > 0:
             self.resultcount = 20
         else:
             self.resultcount = 500
         starturl = self.ecm_url
         self.page = self.retrieve_page_patiently(starturl)
+        self.last_check = datetime.date.today()
         pagefilename = self.vfc_id + "_" + self.date.isoformat()
         pagepath = os.path.join(self.directory, pagefilename)
         open(pagepath, "w").write(self.page)
-        time.sleep(delay)
+        time.sleep(tea_core.DEFAULT_WAIT)
         return self.page
 
     @property
@@ -512,21 +514,31 @@ class Facility(tea_core.Thing):  # data structure
                 return self.latlong
 
     @property
-    def whether_to_update(self):
+    def since_new_file(self):
+        """
+        Provide number of days since new file was added to directory, up to maximum number (150).
+        :return: int
+        """
         maximum_days = 150
-        magic_ratio = 4
-        sincecheck = self.since_last_check
         if self.latest_file_date:
             sincenewfile = datetime.date.today() - self.latest_file_date
             sincegoodcrawl = datetime.date.today() - self.latest_crawl_date
             sincenewfile = min(sincenewfile.days, sincegoodcrawl.days, maximum_days)
         else:
             sincenewfile = maximum_days
-        should_update = True
+        return sincenewfile
+
+    @property
+    def whether_to_update(self):
+        magic_ratio = 4
+        sincecheck = self.since_last_scan
+        sincenewfile = self.since_new_file
         if sincecheck < 1:
             should_update = False
         elif sincenewfile / sincecheck > magic_ratio:
             should_update = False
+        else:
+            should_update = True
         return should_update
 
     @property
@@ -539,10 +551,16 @@ class Facility(tea_core.Thing):  # data structure
         path = self.docs_path
         self.docs.from_tsv(path=path)
 
+    def to_tsv(self, callback=None):
+        tsv = super(Facility, self).to_tsv(callback=callback)
+        return tsv
+
     def from_tsv(self, tsv_line="", load_docs=True):
         super(Facility, self).from_tsv(tsv_line)
         if self.latlong:
             self.latlong = destring_latlong_pair(self.latlong)
+        if self.last_check:
+            self.last_check = date_from_iso(self.last_check)
         if load_docs:
             self.load_docs_from_tsv()
 
@@ -1256,19 +1274,32 @@ def build_zip_url(zipcode):
     return zipurl
 
 
+def get_last_scan_date(directory):
+    files = os.listdir(directory)
+    siteid = os.path.split(directory)[-1]
+    files = filter(lambda x: x.startswith(siteid + "_"), files)
+    latest = None
+    for filename in files:
+        isodate_match = re.search("\d\d\d\d-\d\d-\d\d", filename)
+        if not isodate_match:
+            continue
+        else:
+            isodate = isodate_match.group(0)
+            if not latest:
+                latest = isodate
+            elif isodate > latest:
+                latest = isodate
+    date = date_from_iso(latest)
+    return date
+
+
 def since_last_scan(sitedir):
-    files = os.listdir(sitedir)
-    siteid = os.path.split(sitedir)[-1]
-    previous = filter(lambda x: x.startswith(siteid + "_"), files)
-    previous = filter(lambda x: re.search("\d\d\d\d-\d\d-\d\d", x), previous)
-    previous.sort()
-    if not previous:
-        return 1000  # a nice big number of days
-    last = previous[-1]
-    isodate = re.search("\d\d\d\d-\d\d-\d\d", last).group(0)
-    date = date_from_iso(isodate)
+    date = get_last_scan_date(sitedir)
+    if date is None:
+        return 1000  # arbitrary large number
     delta = datetime.date.today() - date
-    return delta.days
+    days_since = delta.days
+    return days_since
 
 
 def date_from_iso(isodate):
@@ -1906,9 +1937,10 @@ def do_cycle(zips=lakezips):
     cycler.cycle()
 
 
-def setup_collection(zips=lakezips):
-    collection = ZipCollection(zips=zips, whether_download=False)
-    # collection.reload_latlongs()  # no longer necessary if loading from TSV?
+def setup_collection(zips=lakezips, from_tsv=True):
+    collection = ZipCollection(zips=zips, whether_download=False, load_tsv=from_tsv)
+    if from_tsv is False:
+        collection.reload_latlongs()
     return collection
 
 
@@ -1916,7 +1948,7 @@ def do_cron():
     # first, cycle through VFC for new files
     do_cycle()
     collection = setup_collection()
-    save_active_sites_as_json(collection, lookback=7)
+    save_active_sites_as_json(collection)
     tea_core.do_cron()
     return collection
 
