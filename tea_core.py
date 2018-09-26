@@ -41,7 +41,7 @@ class Thing(object):
             value = pieces[index]
             setattr(self, attribute, value)
 
-    def to_tsv(self):
+    def to_tsv(self, callback=None):
         tsv = ""
         for attribute in self.attribute_sequence:
             if hasattr(self, attribute):
@@ -49,7 +49,10 @@ class Thing(object):
                 if not value:
                     value = ""
                 else:
-                    value = str(value)
+                    if callback:
+                        value = callback(value)
+                    else:
+                        value = str(value)
             else:
                 value = ""
             tsv += value + "\t"
@@ -318,21 +321,7 @@ class Document(object):
             path = self.path
         if url is None:
             url = self.url
-        done = False
-        inc = 0
-        while not done:
-            inc += 1
-            if inc > RETRY_LIMIT:
-                print "Aborting!"
-                return False
-            try:
-                urllib.urlretrieve(url, path)
-            except Exception, e:
-                print str(e)
-                time.sleep(DEFAULT_WAIT_AFTER_ERROR)
-            else:
-                done = True
-                time.sleep(DEFAULT_WAIT)
+        retrieve_patiently(url, path)
 
     def to_tsv(self):
         data = [self.crawl_date.isoformat(), self.filename, self.url]
@@ -341,19 +330,6 @@ class Document(object):
 
     def to_geojson(self):
         pass
-
-
-def assign_values(obj, arguments, tolerant=True, cautious=True):
-    for key, value in arguments.items():
-        if not tolerant:  # if accept unicode and string only
-            if not isinstance(value, basestring):
-                print "Ignoring value %s for %s" % (str(value), str(key))
-                continue
-        if cautious:
-            if not hasattr(obj, key):
-                print "Ignoring value %s for %s, not in object properties" % (str(value), str(key))
-                continue
-        setattr(obj, key, value)
 
 
 def get_previous_file_in_directory(directory,
@@ -378,6 +354,22 @@ def get_previous_file_in_directory(directory,
             return filepath
 
 
+"""Hypergeneric functions"""
+
+
+def assign_values(obj, arguments, tolerant=True, cautious=True):
+    for key, value in arguments.items():
+        if not tolerant:  # if accept unicode and string only
+            if not isinstance(value, basestring):
+                print "Ignoring value %s for %s" % (str(value), str(key))
+                continue
+        if cautious:
+            if not hasattr(obj, key):
+                print "Ignoring value %s for %s, not in object properties" % (str(value), str(key))
+                continue
+        setattr(obj, key, value)
+
+
 def do_patiently(action, *args, **kwargs):
     done = False
     inc = 0
@@ -399,8 +391,32 @@ def do_patiently(action, *args, **kwargs):
 
 
 def retrieve_patiently(url, path):
-    do_patiently(urllib.urlretrieve, url, path)
-    return path
+    """
+    Patiently retrieve a binary file from a URL and save it to the filepath provided.
+    :param url: URL of binary file
+    :param path: Complete path (directory and filename)
+    :return: the result tuple from urllib
+    """
+    result = do_patiently(urllib.urlretrieve, url, path)
+    return result
+
+
+def save_or_return_text(text, filepath=None):
+    """
+    Returns text if filepath is None, otherwise writes text to filepath.
+    :param text: Text to be written to file
+    :param filepath: Path of file to write to
+    :return: str
+    """
+    if filepath is None:
+        return text
+    else:
+        handle = open(filepath, "w")
+        with handle:
+            handle.write(text)
+
+
+""" Geodata """
 
 
 def coord_from_address(address):
