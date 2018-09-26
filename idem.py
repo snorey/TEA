@@ -173,7 +173,6 @@ class Facility(Thing):  # data structure
     county = ""
     state = ""
     zip = ""
-    full_address = ""
     latlong_address = ""
     vfc_id = ""
     directory = ""
@@ -219,6 +218,15 @@ class Facility(Thing):  # data structure
             self.downloaded_filenames = self.get_downloaded_docs()
         if not tsv:
             self.docs_from_directory()
+            self.get_latest_page()
+        if self.directory:
+            self.since_last_check = since_last_scan(self.directory)
+        else:
+            self.since_last_check = 0
+        if retrieve:
+            self.retrieve_page_if_missing()
+        if not self.downloaded_filenames:
+            self.downloaded_filenames = self.get_downloaded_docs()
 
     def __eq__(self, other):
         return hash(self) == hash(other)
@@ -233,20 +241,6 @@ class Facility(Thing):  # data structure
     def identity(self):
         identity = self.vfc_id
         return identity
-
-    def retrieve_page_if_missing(self):
-        if not self.page:
-            print "retrieving page", self.vfc_id, self.vfc_name
-            self.page = self.retrieve_page()
-            print len(self.page)
-
-    def get_downloaded_docs(self):
-        docs = set()
-        if self.directory:
-            docs = set(os.listdir(self.directory))
-            docs = set(filter(lambda x: x.endswith(".pdf"), docs))
-            self.downloaded_filenames = docs
-        return docs
 
     @property
     def due_for_download(self):
@@ -269,6 +263,12 @@ class Facility(Thing):  # data structure
         url = "http://vfc.idem.in.gov/DocumentSearch.aspx?xAIID="
         url = url + self.vfc_id
         return url
+
+    @property
+    def full_address(self):
+        full_address = self.vfc_address
+        full_address += ", " + self.city + self.zip
+        return full_address
 
     @property
     def latest_file_date(self):
@@ -297,6 +297,20 @@ class Facility(Thing):  # data structure
             latest_crawl_date = crawls[-1]
             return latest_crawl_date
 
+    def retrieve_page_if_missing(self):
+        if not self.page:
+            print "retrieving page", self.vfc_id, self.vfc_name
+            self.page = self.retrieve_page()
+            print len(self.page)
+
+    def get_downloaded_docs(self):
+        docs = set()
+        if self.directory:
+            docs = set(os.listdir(self.directory))
+            docs = set(filter(lambda x: x.endswith(".pdf"), docs))
+            self.downloaded_filenames = docs
+        return docs
+
     def is_active_since(self, cutoff_date):
         if not self.docs:
             return False
@@ -324,8 +338,6 @@ class Facility(Thing):  # data structure
     def from_row(self):
         result = get_individual_site_info(self.row)
         self.vfc_id, self.vfc_name, self.vfc_address, self.city = result
-        self.vfc_url = "http://vfc.idem.in.gov/DocumentSearch.aspx?xAIID=" + self.vfc_id
-        self.full_address = self.vfc_address + ", " + self.city + self.zip
 
     def docs_from_directory(self):
         if not self.directory:
@@ -1804,6 +1816,7 @@ def facility_to_html(facility, reference_date=None, add_icons=False):
                    "Emergency Response": ("/skull.png", "Emergency response"),
                    "OAQ Air Monitoring": ("/smokestack.png", "Air monitoring"),
                    "SW Facility": ("/dumptruck.png", "Solid waste facility"),
+                   "DERP" : {"/missile.png", "Defense remediation"},
                    }
         iconline = '<p class="icon-line">%s</p>'
         icons = ""
@@ -1838,7 +1851,7 @@ def build_json_props(facility, reference_date=None):
 
 
 def facility_to_point(facility, for_leaflet=True):
-    if facility.full_address and not facility.latlong:
+    if facility.vfc_address and not facility.latlong:
         tea_core.latlongify(facility)
     if facility.latlong:
         coords = facility.latlong
@@ -2034,7 +2047,7 @@ def do_cycle(zips=lakezips):
 
 def setup_collection(zips=lakezips):
     collection = ZipCollection(zips=zips, whether_download=False)
-    collection.reload_latlongs()
+    # collection.reload_latlongs()  # no longer necessary if loading from TSV?
     return collection
 
 
