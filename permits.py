@@ -10,6 +10,8 @@ import tea_core
 import urllib
 import urllib2
 
+from tea_core import write_text_to_file
+
 permitdir = idem_settings.permitdir
 tsv_first_line = "name	URL	PM	number	county	dates	VFC	address	latlong"
 latest_json_path = os.path.join(idem_settings.websitedir, "latest_permits.json")
@@ -230,37 +232,56 @@ class PermitUpdater:
         self.current = set()
         self.new = set()
         self.old = set()
+        self.active = []
         self.urldic = {}
         self.files = self.update_file_list()
 
-    def check_new_permits(self):  # return row data for new permits
-        page = urllib2.urlopen(self.main_url).read()
+    @property
+    def page_path(self):
         today = datetime.date.today().isoformat()
         filename = self.main_url.split("/")[-1]
         filename = today + "_" + filename
         path = os.path.join(self.directory, filename)
-        write_text_to_file(page, path)
+        return path
+
+    @property
+    def active_and_relevant(self):
+        """
+        Return the permits that are of actual interest: comment is open and they are in the right county.
+        :return: list of permits
+        """
+        active = []
+        for permit in self.current:
+            if permit.is_comment_open():
+                if self.is_relevant(permit):
+                    active.append(permit)
+        return active
+
+    def is_relevant(self, permit):
+        result = is_relevant(permit, self.county)
+        return result
+
+    def retrieve_permit_page(self):
+        """
+        Download and return today's permit page.
+        :return: HTML as str
+        """
+        page = urllib2.urlopen(self.main_url).read()
+        write_text_to_file(page, self.page_path)
         return page
 
     def compare_permits(self, newpage, oldpage):
+        """
+        Compare two versions of the IDEM webpage and return a set of added permits and set of removed permits.
+        :param newpage: HTML
+        :param oldpage: HTML
+        :return: tuple of sets of Permit objects
+        """
         newpermits = self.get_permits_from_page(newpage)
         oldpermits = self.get_permits_from_page(oldpage)
         added = newpermits - oldpermits
         subtracted = oldpermits - newpermits
         return added, subtracted
-
-    def get_permits_from_page(self, page):
-        permits = set()
-        countychunks = page.split('<th class="section" colspan="5">')[1:]
-        for c in countychunks:
-            countypermits = self.get_permits_from_section(c)
-            permits |= countypermits
-        return permits
-
-    def rebuild_urldic(self):
-        for permit in self.current:
-            if permit.url:
-                self.urldic[permit.url] = permit
 
     @staticmethod
     def get_permits_from_section(countychunk):
@@ -276,6 +297,19 @@ class PermitUpdater:
             newpermit.county = county
             permits.add(newpermit)
         return permits
+
+    def get_permits_from_page(self, page):
+        permits = set()
+        countychunks = page.split('<th class="section" colspan="5">')[1:]
+        for c in countychunks:
+            countypermits = self.get_permits_from_section(c)
+            permits |= countypermits
+        return permits
+
+    def rebuild_urldic(self):
+        for permit in self.current:
+            if permit.url:
+                self.urldic[permit.url] = permit
 
     def do_daily_permit_check(self, date=None):
         if date is None:
@@ -294,7 +328,7 @@ class PermitUpdater:
                     print latest
             latestpath = os.path.join(self.directory, latest)
             oldpage = open(latestpath).read()
-        newpage = self.check_new_permits()
+        newpage = self.retrieve_permit_page()
         self.current = self.get_permits_from_page(newpage)
         self.new, self.old = self.compare_permits(newpage, oldpage)
         self.rebuild_urldic()
@@ -311,20 +345,28 @@ class PermitUpdater:
         write_text_to_file(path, dump)
         return path
 
+    def generate_log_text(self):
+        logtext = ""
+        logtext += "*** New notices today***\n\n"
+        if self.new:
+            for permit in self.new:
+                logtext += permit.to_tsv() + "\n"
+        else:
+            logtext += "No new notices.\n"
+        logtext += "\n\n*** Notices removed today***\n\n"
+        if self.old:
+            for permit in self.old:
+                logtext += permit.to_tsv() + "\n"
+        else:
+            logtext += "No notices removed today.\n"
+        return logtext
+
     def log_permit_updates(self):
         if not self.new and not self.old:
             return ""
         logfilename = "updates_%s.txt" % self.date.isoformat()
         logpath = os.path.join(self.directory, logfilename)
-        logtext = ""
-        if self.new:
-            logtext += "*** New notices today***\n\n"
-            for permit in self.new:
-                logtext += "\t".join(permit.data()) + "\n"
-        if self.old:
-            logtext += "\n\n*** Notices removed today***\n\n"
-            for permit in self.old:
-                logtext += "\t".join(permit.data()) + "\n"
+        logtext = self.generate_log_text()
         write_text_to_file(logtext, logpath)
         self.logtext = logtext
         return logtext
@@ -347,7 +389,7 @@ class PermitUpdater:
             if filename in self.files:
                 return
         filepath = os.path.join(self.directory, filename)
-        urllib.urlretrieve(permit.url, filepath)
+        tea_core.retrieve_patiently(permit.url, filepath)
         self.files.add(filename)
 
     def get_open_permits(self):
@@ -361,14 +403,6 @@ class PermitUpdater:
         name = today + "_permits_" + extension
         return name
 
-    def is_relevant(self, permit):
-        if permit.county.upper() == self.county.upper():
-            return True
-        elif permit.county.upper().startswith("MULTI"):
-            return True
-        else:
-            return False
-
     def process_permit_to_tsv(self, permit):
         newline = ""
         if self.is_relevant(permit):
@@ -378,7 +412,7 @@ class PermitUpdater:
 
     def to_tsv(self):
         tsv = tsv_first_line + "\n"
-        for permit in self.current:
+        for permit in self.active_and_relevant:
             tsv += self.process_permit_to_tsv(permit)
         return tsv
 
@@ -386,19 +420,17 @@ class PermitUpdater:
         if filepath is None:
             filepath = get_tsv_filepath(self.date)
         tsv = self.to_tsv()
-        result = tea_core.save_or_return_text(tsv, filepath)
-        return result
+        write_text_to_file(tsv, filepath)
+        return filepath
 
     @staticmethod
     def merge_permits(existing_permit, new_permit):
-        if not existing_permit.facility.name:
-            existing_permit.facility.name = new_permit.facility.name
-        if not existing_permit.facility.full_address:
-            existing_permit.facility.full_address = new_permit.facility.full_address
-        if not existing_permit.facility.latlong:
-            existing_permit.facility.latlong = new_permit.facility.latlong
-        if not existing_permit.facility.vfc_id:
-            existing_permit.facility.vfc_id = new_permit.facility.vfc_id
+        for attribute in ["name", "full_address", "latlong", "vfc_id"]:
+            old_value = getattr(existing_permit.facility, attribute)
+            if not old_value:
+                new_value = getattr(new_permit.facility, attribute)
+                if new_value:
+                    setattr(existing_permit.facility, attribute, new_value)
 
     def process_added_permit(self, permit):
         if permit.url in self.urldic.keys():
@@ -426,11 +458,10 @@ class PermitUpdater:
     def load_vfc(self):
         """
         Load available geographic data based on VFC ID assigned to facility associated with each permit.
-        :return: None
         """
         vfcable = [x for x in self.current if x.facility.vfc_id]
         ids = [x.facility.vfc_id for x in vfcable]
-        result = ids_to_facilities(ids)  # name, latlong, address
+        result = ids_to_facility_data(ids)  # name, latlong, address
         for v in vfcable:
             facility_data = result[v.facility.vfc_id]
             if facility_data:
@@ -443,7 +474,6 @@ class PermitUpdater:
     def latlongify(self):
         """
         Generate latlong for all permits.
-        :return: None
         """
         for permit in self.current:
             if permit.facility.latlong:
@@ -475,13 +505,6 @@ def tsv_to_permits(tsv):
     permits = [Permit(tsv=x) for x in lines]
     permits = set(permits)
     return permits
-
-
-def daily_permit_check():
-    updater = PermitUpdater()
-    updater.do_daily_permit_check()
-    updater.save_active_permits(county="Lake")
-    return updater
 
 
 def doc_to_geojson(permit,
@@ -516,14 +539,28 @@ def doc_to_geojson(permit,
     return feature
 
 
+def is_relevant(permit, county):
+    if county.upper() == permit.county.upper():
+        return True
+    elif permit.county.upper().startswith("MULTI"):
+        return True
+    else:
+        return False
+
+
 def filter_active_permits(documents, county="Lake"):
-    # sort by start_date and filter out closed permits
+    """
+    Sort by start_date and filter out closed permits.
+    :param documents: list of documents to be filtered
+    :param county: county to filter by (may be None)
+    :return: list of active permits in selected county
+    """
     unique_documents = set(documents)
     sortable = [x for x in unique_documents if x.is_comment_open()]
     sortable.sort(key=operator.attrgetter("start_date"))
     documents_filtered = sorted(sortable)
     if county is not None:
-        documents_filtered = [x for x in documents_filtered if x.county.upper() == county.upper()]
+        documents_filtered = [x for x in documents_filtered if is_relevant(x, county)]
     return documents_filtered
 
 
@@ -545,7 +582,7 @@ def active_permits_to_geojson(documents, county=None):
     return collection
 
 
-def ids_to_facilities(ids):
+def ids_to_facility_data(ids):
     iddic = collections.defaultdict(tuple)
     from idem import get_location_data
     data = get_location_data()
@@ -573,7 +610,7 @@ def get_json_filepath(date=None):
     return filepath
 
 
-def get_latest_tsv():
+def get_latest_tsv_path():
     files_in_directory = os.listdir(permitdir)
     tsvfiles = [x for x in files_in_directory if x.startswith("permits_") and x.endswith(".tsv")]
     if not tsvfiles:
@@ -583,12 +620,6 @@ def get_latest_tsv():
         latestfile = tsvfiles[-1]
         filepath = os.path.join(permitdir, latestfile)
         return filepath
-
-
-def write_text_to_file(text, path):
-    handle = open(path, "w")
-    with handle:
-        handle.write(text)
 
 
 def write_usable_json(updater, path):
@@ -646,15 +677,22 @@ def build_popup(permit):
     return popup
 
 
+def daily_permit_check():
+    updater = PermitUpdater()
+    updater.do_daily_permit_check()
+    updater.save_active_permits(county="Lake")
+    return updater
+
+
 def do_cron():  # may need to split this into a morning and evening cron
     updater = PermitUpdater()
     updater.do_daily_permit_check()
-    inpath = get_latest_tsv()
-    updater.from_tsv(inpath)
+    tsv_path_in = get_latest_tsv_path()
+    updater.from_tsv(tsv_path_in)
     updater.load_vfc()
     updater.latlongify()
-    outpath = get_tsv_filepath()
-    updater.save_to_tsv(outpath)
+    tsv_path_out = get_tsv_filepath()
+    updater.save_to_tsv(tsv_path_out)
     jsonpath = get_json_filepath()
     write_usable_json(updater, jsonpath)
     write_usable_json(updater, latest_json_path)

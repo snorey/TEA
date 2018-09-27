@@ -864,3 +864,9 @@ def do_cron():
 
 if __name__ == "__main__":
     do_cron()
+
+
+def write_text_to_file(text, path):
+    handle = open(path, "w")
+    with handle:
+        handle.write(text)
