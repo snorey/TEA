@@ -442,7 +442,10 @@ class PermitUpdater:
 
     @staticmethod
     def clean_tsv(tsv):  # repair LibreOffice gunk
-        tsv = tsv.replace("+AC0", "")
+        garbage = {"+AC0": "",
+                   "+AF8-": "_"}
+        for key, value in garbage.items():
+            tsv = tsv.replace(key, value)
         return tsv
 
     def from_tsv(self, filepath=None):
@@ -588,11 +591,9 @@ def ids_to_facility_data(ids):
     data = get_location_data()
     for datum in data:
         facility_id, name, latlong, address = datum
-        iddic[facility_id] = (name, latlong, address)
-    output = {}
-    for facility_id in ids:
-        output[facility_id] = iddic[facility_id]
-    return output
+        if facility_id in ids:
+            iddic[facility_id] = (name, latlong, address)
+    return iddic
 
 
 def get_daily_filepath(suffix, date=None):
