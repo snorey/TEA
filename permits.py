@@ -107,6 +107,9 @@ class Permit(tea_core.Document):
             pieces = datestring.split(" – ")
             if len(pieces) == 1:
                 pieces = datestring.split(" - ")
+            if len(pieces) == 1:
+                pieces = datestring.strip().split(" ")
+                pieces = [pieces[0], pieces[-1]]
             start, stop = pieces
             self.start_date = self.convert_single_date(start)
             self.end_date = self.convert_single_date(stop)
@@ -235,7 +238,8 @@ class PermitUpdater:
         today = datetime.date.today().isoformat()
         filename = self.main_url.split("/")[-1]
         filename = today + "_" + filename
-        open(os.path.join(self.directory, filename), "w").write(page)
+        path = os.path.join(self.directory, filename)
+        write_text_to_file(page, path)
         return page
 
     def compare_permits(self, newpage, oldpage):
@@ -304,7 +308,7 @@ class PermitUpdater:
         if not path:
             path = self.make_json_path()
         dump = geojson.dumps(json, sort_keys=True)
-        open(path, "w").write(dump)
+        write_text_to_file(path, dump)
         return path
 
     def log_permit_updates(self):
@@ -321,10 +325,7 @@ class PermitUpdater:
             logtext += "\n\n*** Notices removed today***\n\n"
             for permit in self.old:
                 logtext += "\t".join(permit.data()) + "\n"
-        print logpath
-        logfile = open(logpath, "w")
-        with logfile:
-            logfile.write(logtext)
+        write_text_to_file(logtext, logpath)
         self.logtext = logtext
         return logtext
 
@@ -375,33 +376,51 @@ class PermitUpdater:
             newline += "\n"
         return newline
 
-    def to_tsv(self, filepath=None):
+    def to_tsv(self):
         tsv = tsv_first_line + "\n"
         for permit in self.current:
-            self.process_permit_to_tsv(permit)
+            tsv += self.process_permit_to_tsv(permit)
+        return tsv
+
+    def save_to_tsv(self, filepath=None):
+        if filepath is None:
+            filepath = get_tsv_filepath(self.date)
+        tsv = self.to_tsv()
         result = tea_core.save_or_return_text(tsv, filepath)
         return result
+
+    @staticmethod
+    def merge_permits(existing_permit, new_permit):
+        if not existing_permit.facility.name:
+            existing_permit.facility.name = new_permit.facility.name
+        if not existing_permit.facility.full_address:
+            existing_permit.facility.full_address = new_permit.facility.full_address
+        if not existing_permit.facility.latlong:
+            existing_permit.facility.latlong = new_permit.facility.latlong
+        if not existing_permit.facility.vfc_id:
+            existing_permit.facility.vfc_id = new_permit.facility.vfc_id
+
+    def process_added_permit(self, permit):
+        if permit.url in self.urldic.keys():
+            existing_permit = self.urldic[permit.url]
+            self.merge_permits(existing_permit, permit)
+        else:
+            self.current.add(permit)
+            self.urldic[permit.url] = permit
+
+    @staticmethod
+    def clean_tsv(tsv):  # repair LibreOffice gunk
+        tsv = tsv.replace("+AC0", "")
+        return tsv
 
     def from_tsv(self, filepath=None):
         if filepath is None:
             filepath = get_tsv_filepath(self.date)
         tsv = open(filepath).read()
+        tsv = self.clean_tsv(tsv)
         permits = tsv_to_permits(tsv)
-        existing_urls = set(self.urldic.keys())
-        for p in permits:
-            if p.url in existing_urls:
-                existing_permit = self.urldic[p.url]
-                if not existing_permit.facility.name:
-                    existing_permit.facility.name = p.facility.name
-                if not existing_permit.facility.full_address:
-                    existing_permit.facility.full_address = p.facility.full_address
-                if not existing_permit.facility.latlong:
-                    existing_permit.facility.latlong = p.facility.latlong
-                if not existing_permit.facility.vfc_id:
-                    existing_permit.facility.vfc_id = p.facility.vfc_id
-            else:
-                self.current.add(p)
-        self.rebuild_urldic()
+        for permit in permits:
+            self.process_added_permit(permit)
         return permits
 
     def load_vfc(self):
@@ -465,9 +484,6 @@ def daily_permit_check():
     return updater
 
 
-# because of the limited automatically available data,
-# we'll just generate a skeleton that can be filled in
-# manually.
 def doc_to_geojson(permit,
                    for_leaflet=True):
     facility = permit.facility
@@ -569,8 +585,15 @@ def get_latest_tsv():
         return filepath
 
 
+def write_text_to_file(text, path):
+    handle = open(path, "w")
+    with handle:
+        handle.write(text)
+
+
 def write_usable_json(updater, path):
     """
+    Given an updater and a filepath, writes a viable JS file to the filepath.
     :param updater: PermitUpdater
     :param path: filepath to be written to
     :type path: str
@@ -578,8 +601,8 @@ def write_usable_json(updater, path):
     """
     json = updater.to_json()
     json_str = geojson.dumps(json)
-    json_str = "var permits = " + json_str
-    open(path, "w").write(json_str)
+    json_str = "var permits = " + json_str + ";"
+    write_text_to_file(json_str, path)
 
 
 def destring_latlong(str_latlong):
@@ -631,7 +654,7 @@ def do_cron():  # may need to split this into a morning and evening cron
     updater.load_vfc()
     updater.latlongify()
     outpath = get_tsv_filepath()
-    updater.to_tsv(outpath)
+    updater.save_to_tsv(outpath)
     jsonpath = get_json_filepath()
     write_usable_json(updater, jsonpath)
     write_usable_json(updater, latest_json_path)
